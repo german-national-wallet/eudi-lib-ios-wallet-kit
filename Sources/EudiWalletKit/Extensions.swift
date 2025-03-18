@@ -234,15 +234,15 @@ extension JSON {
 		}
 	}
 
-	func toDocClaim(_ key: String, order n: Int, pathPrefix: [String], _ claimMetadata: [DocClaimMetadata]?, _ uiCulture: String?, _ displayName: String?, _ mandatory: Bool?) -> DocClaim? {
+	func toDocClaim(_ key: String, order n: Int, pathPrefix: [String], _ claimDisplayNames: [String: String]?, _ mandatoryClaims: [String: Bool]?, _ claimValueTypes: [String: String]?, namespace: String? = nil) -> DocClaim? {
 		if key == "cnf", type == .dictionary { return nil } // members used to identify the proof-of-possession key.
 		if key == "status", type == .dictionary, self["status_list"].type == .dictionary { return nil } // status list.
 		if key == "assurance_level" || key == JWTClaimNames.issuer || key == JWTClaimNames.audience, type == .string {  return nil }
 		if key == "vct", type == .string  { return nil }
-		guard let pair = getDataValue(name: key) else { return nil}
-		let ch = toClaimsArray(pathPrefix: pathPrefix + [key], claimMetadata, uiCulture)
-		let isMandatory = mandatory ?? false
-		return DocClaim(name: key, path: pathPrefix + [key], displayName: displayName, dataValue: pair.0, stringValue: ch?.1 ?? pair.1, isOptional: !isMandatory, order: n, namespace: nil, children: ch?.0)
+		guard let pair = getDataValue(name: key, valueType: claimValueTypes?[key]) else { return nil}
+		let ch = toClaimsArray(pathPrefix: pathPrefix + [key], claimDisplayNames, mandatoryClaims, claimValueTypes, namespace)
+		let isMandatory = mandatoryClaims?[key] ?? true
+		return DocClaim(name: key, path: pathPrefix + [key], displayName: claimDisplayNames?[key], dataValue: pair.0, stringValue: ch?.1 ?? pair.1, valueType: claimValueTypes?[key], isOptional: !isMandatory, order: n, namespace: namespace, children: ch?.0)
 	}
 
 	func toClaimsArray(pathPrefix: [String], _ claimMetadata: [DocClaimMetadata]?, _ uiCulture: String?) -> ([DocClaim], String)? {
