@@ -1,5 +1,5 @@
 {
-  "originHash" : "2bba76a0e94d4feb529fdf774356736328d34073f3278bfb5bb2f0f7245a3e3c",
+  "originHash" : "923b02c72d8ca2ffc08488df10417085393264e407fafdd290340e9cb1ed60a6",
   "pins" : [
     {
       "identity" : "activityindicatorview",
@@ -159,8 +159,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pankaj-sp/eudi-lib-ios-openid4vci-swift.git",
       "state" : {
-        "revision" : "751f66133efceb0662a3d6acfdd644d2627aa655",
-        "version" : "0.12.3"
+        "revision" : "8242b43aa470a4a203cd163f5491b2f888819cf9",
+        "version" : "0.12.2"
       }
     },
     {
