@@ -32,16 +32,12 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 	let issueReq: IssueRequest
 	let credentialIssuerURL: String
 	let uiCulture: String?
-	var bindingKeys: [BindingKey]
+	var bindingKey: BindingKey!
 	let logger: Logger
 	let config: OpenId4VCIConfig
 	static var metadataCache = [String: CredentialOffer]()
 	var urlSession: URLSession
 	var parRequested: ParRequested?
-	//TODO: remove following, use it in better way
-	static var parReqCache: UnauthorizedRequest?
-	let alg = JWSAlgorithm(.ES256)
-	var publicCoseKey: CoseKey?
 
 	init(issueRequest: IssueRequest, credentialIssuerURL: String, uiCulture: String?, config: OpenId4VCIConfig, urlSession: URLSession) {
 		self.issueReq = issueRequest
@@ -50,7 +46,6 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 		self.urlSession = urlSession
 		logger = Logger(label: "OpenId4VCI")
 		self.config = config
-		bindingKeys = [BindingKey]()
 	}
 
 	func initSecurityKeys(algSupported: Set<String>) async throws {
@@ -60,24 +55,16 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 		guard !algTypes.isEmpty, let algType = JWSAlgorithm.AlgorithmType(rawValue: secureAreaSigningAlg.rawValue), algTypes.contains(algType) else {
 			throw WalletError(description: "Unable to find supported signing algorithm \(secureAreaSigningAlg)")
 		}
-		if publicCoseKey == nil {
-			publicCoseKey = try await issueReq.createKey()
-		}
-		
-		let publicKey: SecKey = try publicCoseKey!.toSecKey()
+		let publicCoseKey = try await issueReq.createKey()
+		let publicKey: SecKey = try publicCoseKey.toSecKey()
 		let publicKeyJWK = try ECPublicKey(publicKey: publicKey, additionalParameters: ["alg": JWSAlgorithm(algType).name, "use": "sig", "kid": UUID().uuidString])
 		let unlockData = try await issueReq.secureArea.unlockKey(id: issueReq.id)
-		
 		let signer = try SecureAreaSigner(secureArea: issueReq.secureArea, id: issueReq.id, ecAlgorithm: secureAreaSigningAlg, unlockData: unlockData)
-		let bindingKey: BindingKey? = .jwk(algorithm: JWSAlgorithm(algType), jwk: publicKeyJWK, privateKey: .custom(signer) , issuer: config.client.id)
-		guard let bindingKey else {
-			throw WalletError(description: "Unable to create ")
-		}
-		bindingKeys.append(bindingKey)
+		bindingKey = .jwk(algorithm: JWSAlgorithm(algType), jwk: publicKeyJWK, privateKey: .custom(signer) , issuer: config.client.id)
 	}
 
-	func setBindingKey(bindingKeys: [BindingKey]) {
-		self.bindingKeys = bindingKeys
+	func setBindingKey(bindingKey: BindingKey) {
+		self.bindingKey = bindingKey
 	}
 
 	static func removeOfferFromMetadata(offerUri: String) {
@@ -152,8 +139,10 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 			logger.info("Starting issuing with identifer \(id), scope \(sc), displayName: \(dn)")
 			let issuer = try getIssuer(offer: offer)
 			let res = try await issueOfferedCredentialInternalValidated(authorized, offer: offer, issuer: issuer, configuration: configuration, claimSet: claimSet)
+			// logger.info("Credential str:\n\(str)")
 			return res
 		} catch {
+			// logger.error("Failed to issue document with scope \(ci.scope)")
 			logger.info("Exception: \(error)")
 			return nil
 		}
@@ -190,16 +179,16 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 		}
 	}
 
-	func issueOfferedCredentialInternal(_ authorized: AuthorizedRequest, issuer: Issuer, configuration: CredentialConfiguration, claimSet: ClaimSet?, batchSize: Int? = 1) async throws -> IssuanceOutcome {
+	private func issueOfferedCredentialInternal(_ authorized: AuthorizedRequest, issuer: Issuer, configuration: CredentialConfiguration, claimSet: ClaimSet?) async throws -> IssuanceOutcome {
 		switch authorized {
 		case .noProofRequired:
 			return try await noProofRequiredSubmissionUseCase(issuer: issuer, noProofRequiredState: authorized, configuration: configuration, claimSet: claimSet)
 		case .proofRequired:
-			return try await proofRequiredSubmissionUseCase(issuer: issuer, authorized: authorized, configuration: configuration, claimSet: claimSet, batchSize: batchSize)
+			return try await proofRequiredSubmissionUseCase(issuer: issuer, authorized: authorized, configuration: configuration, claimSet: claimSet)
 		}
 	}
 
-	func issueOfferedCredentialInternalValidated(_ authorized: AuthorizedRequest, offer: CredentialOffer, issuer: Issuer, configuration: CredentialConfiguration, claimSet: ClaimSet? = nil, algSupported: Set<String>? = nil) async throws -> IssuanceOutcome {
+	private func issueOfferedCredentialInternalValidated(_ authorized: AuthorizedRequest, offer: CredentialOffer, issuer: Issuer, configuration: CredentialConfiguration, claimSet: ClaimSet? = nil) async throws -> IssuanceOutcome {
 		let issuerMetadata = offer.credentialIssuerMetadata
 		guard issuerMetadata.credentialsSupported.keys.contains(where: { $0.value == configuration.configurationIdentifier.value }) else {
 			throw WalletError(description: "Cannot find credential identifier \(configuration.configurationIdentifier.value) in offer")
@@ -228,13 +217,8 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 	}
 
 	private func authorizeRequestWithAuthCodeUseCase(issuer: Issuer, offer: CredentialOffer) async throws -> AuthorizeRequestOutcome {
-		var pushedAuthorizationRequestEndpoint = ""
-		if case let .oidc(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint {
-			pushedAuthorizationRequestEndpoint = endpoint
-		} else if case let .oauth(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint {
-			pushedAuthorizationRequestEndpoint = endpoint
-		}
-		guard !pushedAuthorizationRequestEndpoint.isEmpty else { throw WalletError(description: "pushed Authorization Request Endpoint is nil") }
+		let pushedAuthorizationRequestEndpoint = if case let .oidc(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint { endpoint } else if case let .oauth(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint { endpoint } else { "" }
+		if config.usePAR && pushedAuthorizationRequestEndpoint.isEmpty { logger.info("PAR not supported, Pushed Authorization Request Endpoint is nil") }
 		logger.info("--> [AUTHORIZATION] Placing PAR to AS server's endpoint \(pushedAuthorizationRequestEndpoint)")
 		let parPlaced = try await issuer.pushAuthorizationCodeRequest(credentialOffer: offer)
 
@@ -306,32 +290,21 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 	private func handleCredentialResponse(credential: Credential, format: String?, configuration: CredentialConfiguration) throws -> IssuanceOutcome {
 		logger.info("Credential issued with format \(format ?? "unknown")")
 		if case let .string(str) = credential  {
+			// logger.info("Issued credential data:\n\(strBase64)")
 			return .issued(Data(base64URLEncoded: str), str, configuration)
 		} else if case let .json(json) = credential {
-			if configuration.format == .cbor {
-				if let stringArray = json.arrayObject as? [String] {
-					let commaSeparatedString = stringArray.joined(separator: ",")
-					return .issued(Data(base64URLEncoded: commaSeparatedString), commaSeparatedString, configuration)
-				} else {
-					return .issued(try json.rawData(), nil, configuration)
-				}
-			} else if configuration.format == .sdjwt {
-				return .issued(try json.rawData(), nil, configuration)
-			} else {
-				throw WalletError(description: "Invalid format")
-			}
+			return .issued(try JSONEncoder().encode(json), nil, configuration)
 		} else {
 			throw WalletError(description: "Invalid credential")
 		}
 	}
 
-	private func proofRequiredSubmissionUseCase(issuer: Issuer, authorized: AuthorizedRequest, configuration: CredentialConfiguration?, claimSet: ClaimSet? = nil, batchSize: Int? = 1) async throws -> IssuanceOutcome {
+	private func proofRequiredSubmissionUseCase(issuer: Issuer, authorized: AuthorizedRequest, configuration: CredentialConfiguration?, claimSet: ClaimSet? = nil) async throws -> IssuanceOutcome {
 		guard case .proofRequired(let accessToken, let refreshToken, _, _, let timeStamp, _) = authorized else { throw WalletError(description: "Unexpected AuthorizedRequest case") }
 		guard let configuration else { throw WalletError(description: "Credential configuration not found") }
 		let payload: IssuanceRequestPayload = .configurationBased(credentialConfigurationIdentifier: configuration.configurationIdentifier, claimSet: claimSet)
 		let responseEncryptionSpecProvider = { @Sendable in Issuer.createResponseEncryptionSpec($0) }
-		
-		let requestOutcome = try await issuer.request(proofRequest: authorized, bindingKeys: bindingKeys, requestPayload: payload, responseEncryptionSpecProvider: responseEncryptionSpecProvider)
+		let requestOutcome = try await issuer.request(proofRequest: authorized, bindingKeys: [bindingKey], requestPayload: payload, responseEncryptionSpecProvider: responseEncryptionSpecProvider)
 		switch requestOutcome {
 		case .success(let request):
 			switch request {
