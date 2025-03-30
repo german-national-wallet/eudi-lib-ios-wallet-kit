@@ -22,8 +22,6 @@ import MdocSecurity18013
 import WalletStorage
 import SwiftCBOR
 import SwiftyJSON
-import JOSESwift
-import struct eudi_lib_sdjwt_swift.ClaimPath
 import eudi_lib_sdjwt_swift
 
 extension String {
@@ -32,12 +30,28 @@ extension String {
 	}
 }
 
-func secCall<Result>(_ body: (_ resultPtr: UnsafeMutablePointer<Unmanaged<CFError>?>) -> Result?) throws -> Result {
-	var errorQ: Unmanaged<CFError>? = nil
-	guard let result = body(&errorQ) else {
-		throw errorQ!.takeRetainedValue() as Error
+extension Array where Element == Display {
+	func getName(_ uiCulture: String?) -> String? {
+		(first(where: { if #available(iOS 16, *) {
+			$0.locale?.language.languageCode?.identifier == uiCulture ?? Locale.current.language.languageCode?.identifier
+		} else {
+				$0.locale?.languageCode == uiCulture
+		} }) ?? first)?.name
 	}
-	return result
+
+	func getLogo(_ uiCulture: String?) -> Display.Logo? {
+		(first(where: { if #available(iOS 16, *) {
+			$0.locale?.language.languageCode?.identifier == uiCulture ?? Locale.current.language.languageCode?.identifier
+		} else {
+				$0.locale?.languageCode == uiCulture
+		} }) ?? first)?.logo
+	}
+}
+
+extension Array where Element == MdocDataModel18013.DisplayMetadata {
+	func getName(_ uiCulture: String?) -> String? {
+		(first(where: { $0.localeIdentifier == uiCulture }) ?? first)?.name
+	}
 }
 
 extension Display {
@@ -55,15 +69,15 @@ extension Bundle {
 }
 
 extension Data {
-	  public init?(base64urlEncoded input: String) {
-		  var base64 = input
-		  base64 = base64.replacingOccurrences(of: "-", with: "+")
-		  base64 = base64.replacingOccurrences(of: "_", with: "/")
-		  while base64.count % 4 != 0 {
-			  base64 = base64.appending("=")
-		  }
-		  self.init(base64Encoded: base64)
-	  }
+      public init?(base64urlEncoded input: String) {
+          var base64 = input
+          base64 = base64.replacingOccurrences(of: "-", with: "+")
+          base64 = base64.replacingOccurrences(of: "_", with: "/")
+          while base64.count % 4 != 0 {
+              base64 = base64.appending("=")
+          }
+          self.init(base64Encoded: base64)
+      }
 }
 
 extension FileManager {
@@ -73,16 +87,6 @@ extension FileManager {
 				throw WalletError(description: "No downloads directory found")
 			}
 			return paths[0]
-	}
-}
-
-extension Encodable {
-	/// Converting object to postable JSON
-	func toJSON(_ encoder: JSONEncoder = JSONEncoder()) -> [String: Any] {
-		guard let data = try? encoder.encode(self),
-			  let object = try? JSONSerialization.jsonObject(with: data, options: .allowFragments),
-			  let json = object as? [String: Any] else { return [:] }
-		return json
 	}
 }
 
@@ -104,23 +108,19 @@ extension WalletStorage.Document {
 			guard let cmd = md.claimMetadata?.convertToCborClaimMetadata(uiCulture) else { return nil }
 			return cmd.displayNames
 		} else if docDataFormat == .sdjwt {
-			guard let cmd = md.claimMetadata?.convertToJsonClaimMetadata(uiCulture, keyPrefix: nil) else { return nil }
+			guard let cmd = md.claimMetadata?.convertToJsonClaimMetadata(uiCulture, key: nil) else { return nil }
 			return ["": cmd.displayNames]
 		}
 		return nil
 	}
-
-	public var docTypeIdentifier: DocTypeIdentifier? {
-		if docDataFormat == .cbor, let docType = docType { return .msoMdoc(docType: docType) }
-		else if docDataFormat == .sdjwt, let vct = docType { return .sdJwt(vct: vct) }
-		return nil
-	}
 }
+
+extension CredentialIssuerMetadata: @retroactive @unchecked Sendable {}
 
 extension MdocDataModel18013.CoseKeyPrivate {
   // decode private key data cbor string and save private key in key chain
 	public static func from(base64: String) async -> MdocDataModel18013.CoseKeyPrivate? {
-		guard let d = Data(base64Encoded: base64), let obj = try? CBOR.decode([UInt8](d)), let coseKey = try? CoseKey(cbor: obj), let cd = obj[-4], case let CBOR.byteString(rd) = cd else { return nil }
+		guard let d = Data(base64Encoded: base64), let obj = try? CBOR.decode([UInt8](d)), let coseKey = CoseKey(cbor: obj), let cd = obj[-4], case let CBOR.byteString(rd) = cd else { return nil }
 		let storage = await SecureAreaRegistry.shared.defaultSecurityArea!.getStorage()
 		let sampleSA = SampleDataSecureArea.create(storage: storage)
 		let keyData = NSMutableData(bytes: [0x04], length: [0x04].count)
@@ -158,6 +158,13 @@ extension MdocDataModel18013.SignUpResponse {
 	}
 }
 
+/// Extension to make BindingKey conform to Sendable
+extension BindingKey: @unchecked @retroactive Sendable {
+}
+
+extension AuthorizeRequestOutcome: @unchecked Sendable {
+}
+
 extension Claim {
 	var metadata: DocClaimMetadata { DocClaimMetadata(display: display?.map(\.displayMetadata), isMandatory: mandatory, claimPath: path.value.map(\.description)) }
 }
@@ -172,13 +179,13 @@ extension Array where Element == DocClaimMetadata {
 		return (displayNames, mandatory)
 	}
 
-	func convertToJsonClaimMetadata(_ uiCulture: String?, keyPrefix: [String]?) -> (displayNames: [String: String], mandatory: [String: Bool], childMetadata: [DocClaimMetadata]) {
-		let groupIndex = keyPrefix?.count ?? 0
-		let arr = if let keyPrefix { filter { $0.claimPath.count > groupIndex && keyPrefix.elementsEqual($0.claimPath[0..<keyPrefix.count]) } } else { self }
-		let dictKeys = Dictionary(grouping: arr, by: { $0.claimPath[groupIndex]} )
+	func convertToJsonClaimMetadata(_ uiCulture: String?, key: String?, keyIndex: Int = -1) -> (displayNames: [String: String], mandatory: [String: Bool]) {
+		guard allSatisfy({ $0.claimPath.count > keyIndex + 1}) else { return ([:], [:]) } // sanity check
+		let arr = if let key { filter { $0.claimPath[keyIndex] == key } } else { self }
+		let dictKeys = Dictionary(grouping: arr, by: { $0.claimPath[keyIndex+1]} )
 		let displayNames = dictKeys.compactMapValues { $0.first?.display?.getName(uiCulture) }
 		let mandatory =  dictKeys.compactMapValues { $0.first?.isMandatory }
-		return (displayNames, mandatory, arr)
+		return (displayNames, mandatory)
 	}
 }
 
@@ -193,22 +200,6 @@ extension DocMetadata {
 	func getMetadata(uiCulture: String?) -> (displayName: String?, display: [DisplayMetadata]?, issuerDisplay: [DisplayMetadata]?, credentialIssuerIdentifier: String?, configurationIdentifier: String?, claimMetadata: [DocClaimMetadata]?) {
 		guard let claims else { return (nil, nil, nil, nil, nil, nil) }
 		return (getDisplayName(uiCulture), display, issuerDisplay, credentialIssuerIdentifier: credentialIssuerIdentifier, configurationIdentifier: configurationIdentifier,  claims)
-	}
-}
-
-extension DocKeyInfo {
-	static var `default`: Self { DocKeyInfo(secureAreaName: SoftwareSecureArea.name, batchSize: 1, credentialPolicy: .rotateUse) }
-}
-
-extension IssueRequest {
-	var dpopKeyId: String { id + "_dpop" }
-}
-
-extension URL {
-	func getBaseUrl() -> String {
-		var urlString = scheme! + "://" + host!
-		if let port = port { urlString += ":\(port)" }
-		return urlString
 	}
 }
 
@@ -234,25 +225,38 @@ extension JSON {
 		}
 	}
 
-	func toDocClaim(_ key: String, order n: Int, pathPrefix: [String], _ claimDisplayNames: [String: String]?, _ mandatoryClaims: [String: Bool]?, _ claimValueTypes: [String: String]?, namespace: String? = nil) -> DocClaim? {
+	func toDocClaim(_ key: String, order n: Int, pathPrefix: [String], _ claimMetadata: [DocClaimMetadata]?, _ uiCulture: String?, _ displayName: String?, _ mandatory: Bool?) -> DocClaim? {
 		if key == "cnf", type == .dictionary { return nil } // members used to identify the proof-of-possession key.
 		if key == "status", type == .dictionary, self["status_list"].type == .dictionary { return nil } // status list.
 		if key == "assurance_level" || key == JWTClaimNames.issuer || key == JWTClaimNames.audience, type == .string {  return nil }
 		if key == "vct", type == .string  { return nil }
-		guard let pair = getDataValue(name: key, valueType: claimValueTypes?[key]) else { return nil}
-		let ch = toClaimsArray(pathPrefix: pathPrefix + [key], claimDisplayNames, mandatoryClaims, claimValueTypes, namespace)
-		let isMandatory = mandatoryClaims?[key] ?? true
-		return DocClaim(name: key, path: pathPrefix + [key], displayName: claimDisplayNames?[key], dataValue: pair.0, stringValue: ch?.1 ?? pair.1, valueType: claimValueTypes?[key], isOptional: !isMandatory, order: n, namespace: namespace, children: ch?.0)
+		guard let pair = getDataValue(name: key) else { return nil}
+		let ch = toClaimsArray(pathPrefix: pathPrefix + [key], claimMetadata, uiCulture)
+		let isMandatory = mandatory ?? false
+		return DocClaim(name: key, path: pathPrefix + [key], displayName: displayName, dataValue: pair.0, stringValue: ch?.1 ?? pair.1, isOptional: !isMandatory, order: n, namespace: nil, children: ch?.0)
 	}
 
 	func toClaimsArray(pathPrefix: [String], _ claimMetadata: [DocClaimMetadata]?, _ uiCulture: String?) -> ([DocClaim], String)? {
 		switch type {
 		case .array, .dictionary:
+		/*
+			var verified_claims = self["verified_claims"]
+			if case let claims = verified_claims["claims"], claims.type == .dictionary {
+				let cmd = claimMetadata?.convertToJsonClaimMetadata(uiCulture, keyPrefix: nil)
+				let x = verified_claims["verification"].toClaimsArray(pathPrefix: pathPrefix, cmd?.displayNames, cmd?.mandatory)
+				return claims.reduce(into: initialResult) { (partialResult, el: (String, JSON)) in
+					if let (claims1, str1) = el.1.toClaimsArray(pathPrefix: pathPrefix, cmd?.displayNames, cmd?.mandatory) {
+						partialResult.0.append(contentsOf: claims1)
+						partialResult.1 += (partialResult.1.count == 0 ? "" : ", ") + str1
+					}
+				}
+			}
+			*/
 			var a = [DocClaim]()
 			for (n,(key,subJson)) in enumerated() {
 				let isArray = type == .array
-				let n2 = if isArray { String(n) } else { key }
-				let cmd = claimMetadata?.convertToJsonClaimMetadata(uiCulture, keyPrefix: pathPrefix)
+				let n2 = if isArray { "" } else { key }
+				let cmd = claimMetadata?.convertToJsonClaimMetadata(uiCulture, key: key, keyIndex: pathPrefix.count)
 				if let di = subJson.toDocClaim(n2, order: n, pathPrefix: pathPrefix, claimMetadata, uiCulture, cmd?.displayNames[key], cmd?.mandatory[key]) {
 					a.append(di)
 				}
@@ -265,9 +269,9 @@ extension JSON {
 
 
 extension SecureAreaSigner: eudi_lib_sdjwt_swift.AsyncSignerProtocol {
-	func signAsync(_ data: Data) async throws -> Data {
-		return try await sign(data)
-	}
+    func signAsync(_ data: Data) async throws -> Data {
+        return try await sign(data)
+    }
 
 }
 
@@ -286,55 +290,6 @@ extension JSON {
 	}
 }
 
-extension IdentityAndAccessManagementMetadata {
-  public var clientAttestationPopSigningAlgValuesSupported: [JWSAlgorithm]? {
-    switch self {
-    case .oidc(let metaData):
-      return metaData.clientAttestationPopSigningAlgValuesSupported?.map { JWSAlgorithm(name: $0) }
-    case .oauth(let metaData):
-      return metaData.clientAttestationPopSigningAlgValuesSupported?.map { JWSAlgorithm(name: $0) }
-    }
-  }
-}
-
-extension ECPublicKey: @retroactive @unchecked Sendable {}
-
-extension BindingKey {
-
-  static func createSigner(with header: JWSHeader, and payload: Payload, for privateKey: SigningKeyProxy, and signatureAlgorithm: SignatureAlgorithm) async throws -> Signer {
-    if case let .secKey(secKey) = privateKey, let secKeySigner = Signer(signatureAlgorithm: signatureAlgorithm, key: secKey) {
-      return secKeySigner
-    } else if case let .custom(customAsyncSigner) = privateKey {
-      let headerData = header as DataConvertible
-      let signature = try await customAsyncSigner.signAsync(headerData.data(), payload.data())
-      let customSigner = PrecomputedSigner(signature: signature, algorithm: signatureAlgorithm)
-      return Signer(customSigner: customSigner)
-    } else {
-      throw ValidationError.error(reason: "Unable to create JWS signer")
-    }
-  }
-}
-
-class PrecomputedSigner: JOSESwift.SignerProtocol {
-  var algorithm: JOSESwift.SignatureAlgorithm
-  let signature: Data
-
-  init(signature: Data, algorithm: JOSESwift.SignatureAlgorithm) {
-    self.algorithm = algorithm
-    self.signature = signature
-  }
-
-  func sign(_ signingInput: Data) throws -> Data {
-    return signature
-  }
-}
 
 
-extension DocClaim {
-	var claimPath: ClaimPath {
-		ClaimPath(path.map { if let index = Int($0) { ClaimPathElement.arrayElement(index: index) } else if $0.isEmpty { ClaimPathElement.allArrayElements } else { ClaimPathElement.claim(name: $0) } })
-	}
-	var claimPaths: [ClaimPath] {
-		if let children { children.map(\.claimPath) } else { [claimPath] }
-	}
-}
+
