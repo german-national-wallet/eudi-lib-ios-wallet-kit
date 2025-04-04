@@ -31,13 +31,13 @@ public protocol PresentationService: Sendable {
 	/// Generate a QR code to be shown to verifier (optional)
 	func startQrEngagement(secureAreaName: String?, crv: CoseEcCurve) async throws -> String
 	/// Receive request.
-	func receiveRequest() async throws -> (UserRequestInfo, RelyingPartyInfo?)
-	
+	func receiveRequest() async throws -> UserRequestInfo
+
+	var transactionLog: TransactionLog { get }
+
 	/// Send response to verifier
 	/// - Parameters:
 	///   - userAccepted: True if user accepted to send the response
 	///   - itemsToSend: The selected items to send organized in document types and namespaces (see ``RequestItems``)
 	func sendResponse(userAccepted: Bool, itemsToSend: RequestItems, onSuccess: ( @Sendable (URL?) -> Void)?) async throws
 }
-
-

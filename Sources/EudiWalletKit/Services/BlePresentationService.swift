@@ -25,18 +25,20 @@ import MdocDataTransfer18013
 public final class BlePresentationService: @unchecked Sendable, PresentationService {
 	var bleServerTransfer: MdocGattServer
 	public var status: TransferStatus = .initializing
-	var continuationRequest: CheckedContinuation<(UserRequestInfo, RelyingPartyInfo?), Error>?
+	var continuationRequest: CheckedContinuation<UserRequestInfo, Error>?
 	var handleSelected: ((Bool, RequestItems?) async -> Void)?
 	var deviceEngagement: String?
 	var request: UserRequestInfo?
+	public var transactionLog: TransactionLog
 	public var flow: FlowType { .ble }
 
 	public init(parameters: InitializeTransferData) throws {
 		bleServerTransfer = try MdocGattServer(parameters: parameters)
+		transactionLog = TransactionLog(timestamp: Int64(Date.now.timeIntervalSince1970.rounded()), status: .incomplete, type: .presentation, dataFormat: .cbor)
 		bleServerTransfer.delegate = self
 	}
 
-	/// Generate device engagement QR code 
+	/// Generate device engagement QR code
 
 	/// The holder app should present the returned code to the verifier
 	/// - Returns: The image data for the QR code
@@ -52,16 +54,16 @@ public final class BlePresentationService: @unchecked Sendable, PresentationServ
 		try await self.bleServerTransfer.performDeviceEngagement(secureArea: SecureAreaRegistry.shared.get(name: secureAreaName), crv: crv)
 		return self.bleServerTransfer.status == .qrEngagementReady ? self.bleServerTransfer.qrCodePayload! : ""
 	}
-	
+
 	///  Receive request via BLE
-	/// 
-	/// - Returns: The requested items. 
-	public func receiveRequest() async throws -> (UserRequestInfo, RelyingPartyInfo?) {
+	///
+	/// - Returns: The requested items.
+	public func receiveRequest() async throws -> UserRequestInfo {
 		return try await withCheckedThrowingContinuation { c in
 			continuationRequest = c
 		}
 	}
-	
+
 	public func unlockKey(id: String) async throws -> Data? {
 		if let devicePrivateKey = bleServerTransfer.devicePrivateKeys[id] {
 			return try await devicePrivateKey.secureArea.unlockKey(id: id)
@@ -69,7 +71,7 @@ public final class BlePresentationService: @unchecked Sendable, PresentationServ
 		return nil
 	}
 	/// Send response via BLE
-	/// 
+	///
 	/// - Parameters:
 	///   - userAccepted: True if user accepted to send the response
 	///   - itemsToSend: The selected items to send organized in document types and namespaces
@@ -98,7 +100,7 @@ extension BlePresentationService: MdocOfflineDelegate {
 	public func didFinishedWithError(_ error: Error) {
 		continuationRequest?.resume(throwing: error); continuationRequest = nil
 	}
-	
+
 	/// Received request handler
 	/// - Parameters:
 	///   - request: Request information
@@ -106,8 +108,8 @@ extension BlePresentationService: MdocOfflineDelegate {
 	public func didReceiveRequest(_ request: UserRequestInfo, handleSelected: @escaping (Bool, MdocDataTransfer18013.RequestItems?) async -> Void) {
 		self.handleSelected = handleSelected
 		self.request = request
-		continuationRequest?.resume(returning: (request, nil))
+		continuationRequest?.resume(returning: request)
 		continuationRequest = nil
 	}
-	
+
 }

@@ -1,5 +1,5 @@
 {
-  "originHash" : "b833deedc4fc5e8ee0b9c5810d09e83c81ec185a2f2b0ba3c7d3993db692071f",
+  "originHash" : "12db27d51171ee62c5972ded94f17bba884f7b0138f58ace2ab122c60ab07f00",
   "pins" : [
     {
       "identity" : "activityindicatorview",
@@ -125,15 +125,6 @@
       "state" : {
         "revision" : "4dd729db2bacd350dedcb68c252d7650fbad59af",
         "version" : "0.6.0"
-      }
-    },
-    {
-      "identity" : "eudi-lib-ios-iso18013-data-transfer",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-iso18013-data-transfer.git",
-      "state" : {
-        "revision" : "9a0ccf5ff683e160cf79e01d7fdaf06b4df3ac9f",
-        "version" : "0.6.1"
       }
     },
     {
@@ -479,21 +470,12 @@
       }
     },
     {
-      "identity" : "swift-markdown",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-markdown.git",
-      "state" : {
-        "revision" : "8f79cb175981458a0a27e76cb42fee8e17b1a993",
-        "version" : "0.5.0"
-      }
-    },
-    {
       "identity" : "swift-syntax",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-syntax.git",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
       "state" : {
-        "revision" : "74203046135342e4a4a627476dd6caf8b28fe11b",
-        "version" : "509.0.0"
+        "revision" : "64889f0c732f210a935a0ad7cda38f77f876262d",
+        "version" : "509.1.1"
       }
     },
     {
@@ -510,26 +492,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eu-digital-identity-wallet/SwiftCopyableMacro.git",
       "state" : {
-        "revision" : "ef98211fe120f887fdd772d5ae4f025b759551dd",
-        "version" : "0.0.1"
-      }
-    },
-    {
-      "identity" : "swiftui-cached-async-image",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/lorenzofiamingo/swiftui-cached-async-image.git",
-      "state" : {
-        "revision" : "467a3d17479887943ab917a379e62bbaff60ac8a",
-        "version" : "2.1.1"
-      }
-    },
-    {
-      "identity" : "swiftui-shimmer",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/markiv/SwiftUI-Shimmer.git",
-      "state" : {
-        "revision" : "0226e21f9bf355d40e07e5f5e1c33679d50e167f",
-        "version" : "1.5.1"
+        "revision" : "1983f8e7d805d323b834846b1a7594a327729cbe",
+        "version" : "0.0.3"
       }
     },
     {
