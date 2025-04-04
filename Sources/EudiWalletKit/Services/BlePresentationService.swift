@@ -34,7 +34,7 @@ public final class BlePresentationService: @unchecked Sendable, PresentationServ
 
 	public init(parameters: InitializeTransferData) throws {
 		bleServerTransfer = try MdocGattServer(parameters: parameters)
-		transactionLog = TransactionLogUtils.initializeTransactionLog(type: .presentation, dataFormat: .cbor)
+		transactionLog = TransactionLog(timestamp: Int64(Date.now.timeIntervalSince1970.rounded()), status: .incomplete, type: .presentation, dataFormat: .cbor)
 		bleServerTransfer.delegate = self
 	}
 
@@ -45,7 +45,7 @@ public final class BlePresentationService: @unchecked Sendable, PresentationServ
 	public func startQrEngagement(secureAreaName: String?, crv: CoseEcCurve) async throws -> String {
 		if bleServerTransfer.unlockData == nil {
 			var unlockData = [String: Data]()
-			for (id, key) in bleServerTransfer.privateKeyObjects {
+			for (id, key) in bleServerTransfer.devicePrivateKeys {
 				let ud = try await key.secureArea.unlockKey(id: id)
 				if let ud { unlockData[id] = ud }
 			}
@@ -59,16 +59,14 @@ public final class BlePresentationService: @unchecked Sendable, PresentationServ
 	///
 	/// - Returns: The requested items.
 	public func receiveRequest() async throws -> UserRequestInfo {
-		let userRequestInfo = try await withCheckedThrowingContinuation { c in
+		return try await withCheckedThrowingContinuation { c in
 			continuationRequest = c
 		}
-		TransactionLogUtils.setCborTransactionLogRequestInfo(userRequestInfo, transactionLog: &transactionLog)
-		return userRequestInfo
 	}
 
 	public func unlockKey(id: String) async throws -> Data? {
-		if let dpo = bleServerTransfer.privateKeyObjects[id] {
-			return try await dpo.secureArea.unlockKey(id: id)
+		if let devicePrivateKey = bleServerTransfer.devicePrivateKeys[id] {
+			return try await devicePrivateKey.secureArea.unlockKey(id: id)
 		}
 		return nil
 	}
@@ -77,10 +75,9 @@ public final class BlePresentationService: @unchecked Sendable, PresentationServ
 	/// - Parameters:
 	///   - userAccepted: True if user accepted to send the response
 	///   - itemsToSend: The selected items to send organized in document types and namespaces
-	public func sendResponse(userAccepted: Bool, itemsToSend: RequestItems, onSuccess: (@Sendable (URL?) -> Void)?) async throws  {
+	public func sendResponse(userAccepted: Bool, itemsToSend: RequestItems, onSuccess: ( @Sendable (URL?) -> Void)?) async throws  {
 		await handleSelected?(userAccepted, itemsToSend)
 		handleSelected = nil
-		TransactionLogUtils.setCborTransactionLogResponseInfo(bleServerTransfer, transactionLog: &transactionLog)
 	}
 }
 

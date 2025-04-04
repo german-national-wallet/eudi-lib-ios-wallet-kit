@@ -1,5 +1,5 @@
 {
-  "originHash" : "6b764746171218e06ab46762a2dfffde698dfa72b9b24345c1e3a540fddecca9",
+  "originHash" : "12db27d51171ee62c5972ded94f17bba884f7b0138f58ace2ab122c60ab07f00",
   "pins" : [
     {
       "identity" : "blueecc",
@@ -29,6 +29,33 @@
       }
     },
     {
+      "identity" : "eudi-lib-ios-iso18013-data-model",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-iso18013-data-model.git",
+      "state" : {
+        "revision" : "a32a6c07542c5ea2055e619b0f1f09d9b4d70c7e",
+        "version" : "0.5.8"
+      }
+    },
+    {
+      "identity" : "eudi-lib-ios-iso18013-security",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-iso18013-security.git",
+      "state" : {
+        "revision" : "9035e447e9a0b3107ac11613ef81472202b9adf0",
+        "version" : "0.4.8"
+      }
+    },
+    {
+      "identity" : "eudi-lib-ios-openid4vci-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-openid4vci-swift.git",
+      "state" : {
+        "revision" : "8242b43aa470a4a203cd163f5491b2f888819cf9",
+        "version" : "0.12.2"
+      }
+    },
+    {
       "identity" : "eudi-lib-ios-presentation-exchange-swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-presentation-exchange-swift.git",
@@ -44,6 +71,15 @@
       "state" : {
         "revision" : "b240cae2f084ceabfdad88fe56404f255060e2b9",
         "version" : "0.8.3"
+      }
+    },
+    {
+      "identity" : "eudi-lib-ios-wallet-storage",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-wallet-storage.git",
+      "state" : {
+        "revision" : "2bccbe11d65de8954e881da1b6de578509f6e16a",
+        "version" : "0.4.8"
       }
     },
     {
@@ -191,12 +227,30 @@
       }
     },
     {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
+      "state" : {
+        "revision" : "64889f0c732f210a935a0ad7cda38f77f876262d",
+        "version" : "509.1.1"
+      }
+    },
+    {
       "identity" : "swiftcbor",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/niscy-eudiw/SwiftCBOR.git",
       "state" : {
         "revision" : "2c8c55273d4c4aae21bb46c2afbae79ee072eff4",
         "version" : "0.6.2"
+      }
+    },
+    {
+      "identity" : "swiftcopyablemacro",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/eu-digital-identity-wallet/SwiftCopyableMacro.git",
+      "state" : {
+        "revision" : "1983f8e7d805d323b834846b1a7594a327729cbe",
+        "version" : "0.0.3"
       }
     },
     {
