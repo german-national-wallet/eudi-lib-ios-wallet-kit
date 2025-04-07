@@ -29,39 +29,6 @@ extension String {
 		NSLocalizedString(self, comment: "")
 	}
 }
-
-func secCall<Result>(_ body: (_ resultPtr: UnsafeMutablePointer<Unmanaged<CFError>?>) -> Result?) throws -> Result {
-    var errorQ: Unmanaged<CFError>? = nil
-    guard let result = body(&errorQ) else {
-        throw errorQ!.takeRetainedValue() as Error
-    }
-    return result
-}
-
-extension Array where Element == Display {
-	func getName(_ uiCulture: String?) -> String? {
-		(first(where: { if #available(iOS 16, *) {
-			$0.locale?.language.languageCode?.identifier == uiCulture ?? Locale.current.language.languageCode?.identifier
-		} else {
-				$0.locale?.languageCode == uiCulture
-		} }) ?? first)?.name
-	}
-
-	func getLogo(_ uiCulture: String?) -> Display.Logo? {
-		(first(where: { if #available(iOS 16, *) {
-			$0.locale?.language.languageCode?.identifier == uiCulture ?? Locale.current.language.languageCode?.identifier
-		} else {
-				$0.locale?.languageCode == uiCulture
-		} }) ?? first)?.logo
-	}
-}
-
-extension Array where Element == MdocDataModel18013.DisplayMetadata {
-	func getName(_ uiCulture: String?) -> String? {
-		(first(where: { $0.localeIdentifier == uiCulture }) ?? first)?.name
-	}
-}
-
 extension Display {
 	public var displayMetadata: MdocDataModel18013.DisplayMetadata {
 		let logoMetadata = LogoMetadata(urlString: logo?.uri?.absoluteString, alternativeText: logo?.alternativeText)
@@ -198,9 +165,12 @@ extension Array where Element == DocClaimMetadata {
 }
 
 extension CredentialConfiguration {
-	func convertToDocMetadata() -> DocMetadata {
-		let claimMetadata = claims.map(\.metadata)
-		return DocMetadata(credentialIssuerIdentifier: credentialIssuerIdentifier, configurationIdentifier: configurationIdentifier.value, docType: docType, display: display, issuerDisplay: issuerDisplay, claims: claimMetadata)
+	func convertToDocMetadata(docId: String) -> DocMetadata {
+		let namespacedClaims = msoClaims?.mapValues { (claims: [String: Claim]) in
+			claims.mapValues(\.metadata)
+		}
+		let flatClaims = flatClaims?.mapValues(\.metadata)
+		return DocMetadata(docId: docId, credentialIssuerIdentifier: credentialIssuerIdentifier, configurationIdentifier: configurationIdentifier.value, docType: docType, display: display, issuerDisplay: issuerDisplay, namespacedClaims: namespacedClaims, flatClaims: flatClaims)
 	}
 }
 
