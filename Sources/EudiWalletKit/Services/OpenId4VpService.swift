@@ -55,7 +55,7 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 	/// map of docType to inputDescriptor-id
 	var inputDescriptorMap: [String: String]!
 	var dauthMethod: DeviceAuthMethod
-	var devicePrivateKeys: [String: CoseKeyPrivate]!
+	var privateKeyObjects: [String: CoseKeyPrivate]!
 	var logger = Logger(label: "OpenId4VpService")
 	var presentationDefinition: PresentationDefinition?
 	var dcql: DCQL?
@@ -80,7 +80,7 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 	public init(parameters: InitializeTransferData, qrCode: Data, openId4VpVerifierApiUri: String?, openId4VpVerifierLegalName: String?, urlSession: URLSession) throws {
 		self.flow = .openid4vp(qrCode: qrCode)
 		let objs = parameters.toInitializeTransferInfo()
-		dataFormats = objs.dataFormats; docs = objs.documentObjects; devicePrivateKeys = objs.privateKeyObjects
+		dataFormats = objs.dataFormats; docs = objs.documentObjects; privateKeyObjects = objs.privateKeyObjects
 		iaca = objs.iaca; dauthMethod = objs.deviceAuthMethod
 		docMetadata = parameters.docMetadata
 		idsToDocTypes = objs.idsToDocTypes
@@ -99,7 +99,7 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 	public func startQrEngagement(secureAreaName: String?, crv: CoseEcCurve) async throws -> String {
 		if unlockData == nil {
 			unlockData = [String: Data]()
-			for (id, key) in devicePrivateKeys {
+			for (id, key) in privateKeyObjects {
 				let ud = try await key.secureArea.unlockKey(id: id)
 				if let ud { unlockData[id] = ud }
 			}
@@ -116,6 +116,10 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 			switch await siopOpenId4Vp.authorize(url: openid4VPURI)  {
 			case .notSecured(data: _):
 				throw PresentationSession.makeError(str: "Not secure request received.")
+			case .invalidResolution(error: let error, dispatchDetails: let details):
+				logger.error("Invalid resolution: \(error.localizedDescription)")
+				if let details { logger.error("Details: \(details)") }
+				throw PresentationSession.makeError(str: "Invalid resolution: \(error.localizedDescription)")
 			case let .jwt(request: resolvedRequestData):
 				self.resolvedRequestData = resolvedRequestData
 				switch resolvedRequestData {
@@ -139,14 +143,14 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 						formatsRequested = fmtsReq; inputDescriptorMap = imap; requestItems = items
 						case let .byDigitalCredentialsQuery(dcql):
 						self.dcql = dcql
-						deviceRequestBytes = nil // try? JSONEncoder().encode(dcql)
+						deviceRequestBytes = try? JSONEncoder().encode(dcql)
 						let (items, fmtsReq, imap) = try Openid4VpUtils.parseDcql(dcql, idsToDocTypes: idsToDocTypes, dataFormats: dataFormats, docDisplayNames: docDisplayNames, logger: logger)
 						formatsRequested = fmtsReq; inputDescriptorMap = imap; requestItems = items
 					}
 					self.transactionData = vp.transactionData
 					guard let requestItems, let formatsRequested else { throw PresentationSession.makeError(str: "Invalid request query") }
 					var result = UserRequestInfo(docDataFormats: formatsRequested, itemsRequested: requestItems, deviceRequestBytes: deviceRequestBytes)
-					logger.info("Verifer requested items: \(requestItems.mapValues { $0.mapValues { ar in ar.map(\.elementIdentifier) } })")
+					logger.info("Verifier requested items: \(requestItems.mapValues { $0.mapValues { ar in ar.map(\.elementIdentifier) } })")
 					if let ln = resolvedRequestData.legalName { result.readerLegalName = ln }
 					if let readerCertificateIssuer {
 						result.readerAuthValidated = readerAuthValidated
@@ -166,7 +170,7 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 	}
 
 	func generateCborVpToken(itemsToSend: RequestItems) async throws -> (VerifiablePresentation, Data, [Data?]) {
-		let resp = try await MdocHelpers.getDeviceResponseToSend(deviceRequest: nil, issuerSigned: docsCbor, docDisplayNames: docDisplayNames, docMetadata: docMetadata.compactMapValues { $0 }, selectedItems: itemsToSend, eReaderKey: eReaderPub, devicePrivateKeys: devicePrivateKeys, sessionTranscript: sessionTranscript, dauthMethod: .deviceSignature, unlockData: unlockData)
+		let resp = try await MdocHelpers.getDeviceResponseToSend(deviceRequest: nil, issuerSigned: docsCbor, docMetadata: docMetadata.compactMapValues { $0 }, selectedItems: itemsToSend, eReaderKey: eReaderPub, privateKeyObjects: privateKeyObjects, sessionTranscript: sessionTranscript, dauthMethod: .deviceSignature, unlockData: unlockData)
 		guard let resp else { throw PresentationSession.makeError(str: "DOCUMENT_ERROR") }
 		let vpTokenData = Data(resp.deviceResponse.toCBOR(options: CBOROptions()).encode())
 		let vpTokenStr = vpTokenData.base64URLEncodedString()
@@ -210,11 +214,12 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 					let vpToken = try await generateCborVpToken(itemsToSend: itemsToSend1)
 					inputToPresentations.append((inputDescrId, docId, vpToken.0))
 				} else if dataFormats[docId] == .sdjwt {
-					let docSigned = docsSdJwt[docId]; let dpk = devicePrivateKeys[docId]
+					let docSigned = docsSdJwt[docId]; let dpk = privateKeyObjects[docId]
 					guard let docSigned, let dpk, let items = nsItems.first?.value else { continue }
 					let unlockData = try await dpk.secureArea.unlockKey(id: docId)
-					let keyInfo = try await dpk.secureArea.getKeyInfo(id: docId);	let dsa = keyInfo.publicKey.crv.defaultSigningAlgorithm
-					let signer = try SecureAreaSigner(secureArea: dpk.secureArea, id: docId, ecAlgorithm: dsa, unlockData: unlockData)
+					let keyInfo = try await dpk.secureArea.getKeyBatchInfo(id: docId)
+					let dsa = keyInfo.crv.defaultSigningAlgorithm
+					let signer = try SecureAreaSigner(secureArea: dpk.secureArea, id: docId, index: dpk.index, ecAlgorithm: dsa, unlockData: unlockData)
 					let signAlg = try SecureAreaSigner.getSigningAlgorithm(dsa)
 					let hai = HashingAlgorithmIdentifier(rawValue: docsHashingAlgs[docId] ?? "") ?? .SHA3256
 					guard let presented = try await Openid4VpUtils.getSdJwtPresentation(docSigned, hashingAlg: hai.hashingAlgorithm(), signer: signer, signAlg: signAlg, requestItems: items, nonce: vpNonce, aud: vpClientId, transactionData: transactionData) else {
@@ -257,11 +262,12 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 			logger.info("Dispatch rejected, reason: \(reason)")
 			throw PresentationSession.makeError(str: reason)
 		}
-		if let vpTokens, let presentationSubmission, vpTokens.allSatisfy({ $0.1 != nil }) {
+		if let vpTokens, presentationSubmission != nil || dcql != nil, vpTokens.allSatisfy({ $0.1 != nil }) {
 			let docIds = vpTokens.compactMap { $0.1 }
+			let data_formats: [DocDataFormat]? = if let dcql, case let .vpToken(vpContent) = consent, case let .dcql(vp) = vpContent { vp.keys.map { dcql.findQuery(id: $0.value)!.dataFormat} } else { nil }
 			let responseMetadata: [Data?] = docIds.map { docMetadata[$0].flatMap { $0 } }
-			let vpTokenValues = vpTokens.map { $0.2.getString() }
-			let responsePayload = VpResponsePayload(verifiable_presentations: vpTokenValues, presentation_submission: presentationSubmission, transaction_data: transactionData)
+			let vpTokenValues: [String]? = if case let .vpToken(vpContent) = consent, case .presentationExchange(_,_) = vpContent {  vpTokens.map { $0.2.getString() } } else if case let .vpToken(vpContent) = consent, case let .dcql(vp) = vpContent {  vp.values.map {$0.getString() } } else  { nil }
+			let responsePayload = VpResponsePayload(verifiable_presentations: vpTokenValues!, presentation_submission: presentationSubmission, data_formats: data_formats, transaction_data: transactionData)
 			TransactionLogUtils.setTransactionLogResponseInfo(deviceResponseBytes: try? JSONEncoder().encode(responsePayload), dataFormat: .json, sessionTranscript: Data(sessionTranscript.taggedEncoded.encode(options: CBOROptions())), responseMetadata: responseMetadata, transactionLog: &transactionLog)
 		} else if case let .negative(message) = consent {
 			transactionLog = transactionLog.copy(status: .failed, errorMessage: message)
