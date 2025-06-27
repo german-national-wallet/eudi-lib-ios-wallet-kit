@@ -41,3 +41,10 @@ public protocol PresentationService: Sendable {
 	///   - itemsToSend: The selected items to send organized in document types and namespaces (see ``RequestItems``)
 	func sendResponse(userAccepted: Bool, itemsToSend: RequestItems, onSuccess: ( @Sendable (URL?) -> Void)?) async throws
 }
+
+public protocol NetworkingProtocol: Sendable {
+	func data(from url: URL) async throws -> (Data, URLResponse)
+	func data(for request: URLRequest) async throws -> (Data, URLResponse)
+}
+
+extension URLSession: NetworkingProtocol {}
