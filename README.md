@@ -1,5 +1,17 @@
 # German EUDI wallet specific changes:
 
+Strategy to pull Niscy’s code faster:
+
+Steps:
+
+Pull the code from Niscy’s code for Wallet Kit in our repository.
+
+Make the sure the extensions are present in the Extensions folders.(These are now designed to be isolated from Niscy’s code hence making it faster to pull.)
+
+Identify the protocol changes from upstream and make any necessary changes.(if needed)
+
+Verify by integrating it with UI and e2e tests.
+
 📂 Structure
 
 Extension/
