@@ -13,8 +13,8 @@ import OpenID4VCI
 import SwiftyJSON
 
 extension EudiWallet {
-    @MainActor
-    @discardableResult public func issuePAR(docTypeIdentifier: DocTypeIdentifier, keyOptions: KeyOptions? = nil, promptMessage: String? = nil, dpopConstructorParam: IssuerDPoPConstructorParam) async throws -> WalletStorage.Document? {
+	@MainActor
+	@discardableResult public func issuePAR(docTypeIdentifier: DocTypeIdentifier, keyOptions: KeyOptions? = nil, promptMessage: String? = nil, dpopConstructorParam: IssuerDPoPConstructorParam) async throws -> WalletStorage.Document? {
 		let usedKeyOptions = try await validateKeyOptions(docTypeIdentifier: docTypeIdentifier, keyOptions: keyOptions)
 		let openId4VCIService = try await prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: nil, keyOptions: usedKeyOptions, disablePrompt: false, promptMessage: promptMessage)
 
@@ -24,8 +24,8 @@ extension EudiWallet {
 		}
 
 		return try await finalizeIssuing(issueOutcome: issuance, docType: docTypeIdentifier.docType, format: dataFormat, issueReq: openId4VCIService.issueReq, openId4VCIService: openId4VCIService)
-    }
-	
+	}
+
 	@MainActor
 	@discardableResult public func resumePendingIssuanceDocuments(pendingDoc: WalletStorage.Document, authorizationCode: String, keyOptions: KeyOptions? = nil) async throws -> (WalletStorage.Document?, AuthorizedRequest?) {
 
@@ -51,7 +51,7 @@ extension EudiWallet {
 			}
 			let authRequest = AuthorizedRequest(accessToken: try IssuanceAccessToken(accessToken: accessToken, tokenType: .none), refreshToken: try IssuanceRefreshToken(refreshToken: refreshToken), credentialIdentifiers: nil, timeStamp: 3600, dPopNonce: nil)
 
-			
+
 			if let credentialsOutcome = try openId4VCIServices.first {
 				let credentialsOutcome = try await credentialsOutcome.1.getCredentialsWithRefreshToken(docTypeIdentifier: docTypeIdentifier, authorizedRequest: authRequest, issuerDPopConstructorParam: issuerDPopConstructorParam, docId: credentialsOutcome.0.id)
 
@@ -76,15 +76,14 @@ extension EudiWallet {
 		}
 	}
 
-    private func prepareIssuingService(id: String, docType: String?, displayName: String?, keyOptions: KeyOptions?, promptMessage: String? = nil) async throws -> (IssueRequest, OpenId4VCIService) {
-        guard let openID4VciIssuerUrl else { throw WalletError(description: "issuer Url not defined")}
-		
-        let issueReq = try await Self.authorizedAction(action: {
-            return try await beginIssueDocument(id: id, keyOptions: keyOptions)
-        }, disabled: !userAuthenticationRequired || docType == nil, dismiss: {}, localizedReason: promptMessage ?? NSLocalizedString("issue_document", comment: "").replacingOccurrences(of: "{docType}", with: NSLocalizedString(displayName ?? docType ?? "", comment: "")))
-        guard let issueReq else { throw LAError(.userCancel)}
-		let openId4VCIService = await OpenId4VCIService(issueRequest: issueReq, credentialIssuerURL: openID4VciIssuerUrl, uiCulture: uiCulture, config: openID4VciConfig.toOpenId4VCIConfig(), cacheIssuerMetadata: true, networking: networkingVci)
+	private func prepareIssuingService(id: String, docType: String?, displayName: String?, keyOptions: KeyOptions?, promptMessage: String? = nil) async throws -> (IssueRequest, OpenId4VCIService) {
+		guard let openID4VciIssuerUrl else { throw WalletError(description: "issuer Url not defined")}
 
-        return (issueReq, openId4VCIService)
-    }
+		let issueReq = try await Self.authorizedAction(action: {
+			return try await beginIssueDocument(id: id, keyOptions: keyOptions)
+		}, disabled: !userAuthenticationRequired || docType == nil, dismiss: {}, localizedReason: promptMessage ?? NSLocalizedString("issue_document", comment: "").replacingOccurrences(of: "{docType}", with: NSLocalizedString(displayName ?? docType ?? "", comment: "")))
+		guard let issueReq else { throw LAError(.userCancel)}
+		let openId4VCIService = await OpenId4VCIService(issueRequest: issueReq, credentialIssuerURL: openID4VciIssuerUrl, uiCulture: uiCulture, config: openID4VciConfig.toOpenId4VCIConfig(), cacheIssuerMetadata: true, networking: networkingVci)
+		return (issueReq, openId4VCIService)
+	}
 }
