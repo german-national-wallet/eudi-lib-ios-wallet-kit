@@ -51,7 +51,6 @@ extension EudiWallet {
 			}
 			let authRequest = AuthorizedRequest(accessToken: try IssuanceAccessToken(accessToken: accessToken, tokenType: .none), refreshToken: try IssuanceRefreshToken(refreshToken: refreshToken), credentialIdentifiers: nil, timeStamp: 3600, dPopNonce: nil)
 
-
 			if let credentialsOutcome = try openId4VCIServices.first {
 				let credentialsOutcome = try await credentialsOutcome.1.getCredentialsWithRefreshToken(docTypeIdentifier: docTypeIdentifier, authorizedRequest: authRequest, issuerDPopConstructorParam: issuerDPopConstructorParam, docId: credentialsOutcome.0.id)
 
