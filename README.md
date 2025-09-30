@@ -1,3 +1,41 @@
+# German EUDI wallet specific changes:
+
+📂 Structure
+
+Extension/
+
+EudiWallet+Extension
+
+OpenId4VciService+Extension
+
+🎯 Purpose
+
+Provide functions required by the UI layer.
+
+Functions inside the extensions are:
+
+Modified versions of functions already present in Niscy’s core.
+
+Built on top of existing core functions for consistency and reuse.
+
+🔄 Updates to Niscy Core
+
+When Niscy’s core is updated (via library pull):
+
+Core code will be refreshed.
+
+Extensions will remain unaffected, since they are not part of Niscy’s library.
+
+This approach ensures that custom logic remains stable across core updates.
+
+⚠️ Maintenance Notes
+
+If functions or classes used by these extensions change in Niscy’s core, corresponding changes may be required here.
+
+After every core update, validate extension compatibility as part of the update process.
+
+
+
 # EUDI Wallet Kit library for iOS
 
 **Important!** Before you proceed, please read
