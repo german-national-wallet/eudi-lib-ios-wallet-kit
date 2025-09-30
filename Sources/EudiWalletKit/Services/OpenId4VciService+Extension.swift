@@ -62,23 +62,14 @@ extension OpenId4VCIService {
 				case .success(let authReq):
 					let updatedAuthRequest = authReq
 
-//					if let cnonce = cnonce {
-//						if case let .noProofRequired(accessToken, refreshToken, credentialIdentifiers, timeStamp, dPopNonce) = authReq {
-//							authRequest = .proofRequired(accessToken: accessToken, refreshToken: refreshToken, cNonce: cnonce, credentialIdentifiers: credentialIdentifiers, timeStamp: timeStamp, dPopNonce: dPopNonce)
-//						}
-//					}
 					if offer.credentialConfigurationIdentifiers.first != nil {
 						do {
-//							let configuration = try getCredentialIdentifier(credentialIssuerIdentifier: offer.credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: offer.credentialIssuerMetadata.display, credentialsSupported: offer.credentialIssuerMetadata.credentialsSupported, identifier: identifier, docType: docType, scope: scope)
 							let configuration = try getCredentialConfiguration(credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: metaData.display, credentialsSupported: metaData.credentialsSupported, identifier: docTypeIdentifier.configurationIdentifier, docType: docTypeIdentifier.docType, vct: docTypeIdentifier.vct, batchCredentialIssuance: metaData.batchCredentialIssuance)
 
-//							try await initSecurityKeys(algSupported: Set(configuration.algValuesSupported), docID: docId)
 							let bindingKeys = try await initSecurityKeys(algSupported: Set(configuration.credentialSigningAlgValuesSupported))
 
-//							let issuanceOutcome = try await issueOfferedCredentialInternalValidated(authRequest, offer: offer, issuer: issuer, configuration: configuration, claimSet: nil)
 							let issuanceOutcome = try await submissionUseCase(authorizedRequest, issuer: issuer, configuration: configuration, bindingKeys: bindingKeys)
 
-//							let authReqParams = convertAuthorizedRequestToParam(authorizedRequest: authRequest)
 							return (issuanceOutcome, configuration.format, updatedAuthRequest)
 						} catch {
 							throw WalletError(description: "Invalid issuer metadata")
@@ -99,7 +90,6 @@ extension OpenId4VCIService {
 		if let authorizationServer = metaData.authorizationServers?.first {
 			let authServerMetadata = await AuthorizationServerMetadataResolver(oidcFetcher: Fetcher(session: networking), oauthFetcher: Fetcher(session: networking)).resolve(url: authorizationServer)
 			let configuration = try getCredentialConfiguration(credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: metaData.display, credentialsSupported: metaData.credentialsSupported, identifier: docTypeIdentifier.configurationIdentifier, docType: docTypeIdentifier.docType, vct: docTypeIdentifier.vct, batchCredentialIssuance: metaData.batchCredentialIssuance)
-//			let bindingKeys = try await initSecurityKeys(algSupported: Set(configuration.credentialSigningAlgValuesSupported))
 			let offer = try CredentialOffer(credentialIssuerIdentifier: credentialIssuerIdentifier, credentialIssuerMetadata: metaData, credentialConfigurationIdentifiers: [configuration.configurationIdentifier], grants: nil, authorizationServerMetadata: try authServerMetadata.get())
 
 			// Authorize with auth code flow
@@ -113,57 +103,10 @@ extension OpenId4VCIService {
 				return (outcome, configuration.format)
 			}
 			return (nil, configuration.format)
-//			guard case .authorized(let authorized) = authorizedOutcome else {
-//				throw PresentationSession.makeError(str: "Invalid authorized request outcome")
-//			}
-//			let outcome = try await submissionUseCase(authorized, issuer: issuer, configuration: configuration, bindingKeys: bindingKeys)
-//			return (outcome, configuration.format)
 		} else {
 			throw PresentationSession.makeError(str: "Invalid authorization server - no authorization server found")
 		}
 	}
-
-	/*private func issueByPARType_old(_ docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil, wia: IssuerDPoPConstructorParam) async throws -> (IssuanceOutcome, DocDataFormat) {
-//		let credentialIssuerIdentifier = try CredentialIssuerId(credentialIssuerURL)
-//		let issuerMetadata = await CredentialIssuerMetadataResolver(fetcher: Fetcher(session: urlSession)).resolve(source: .credentialIssuer(credentialIssuerIdentifier))
-		let (credentialIssuerIdentifier, metaData) = try await getIssuerMetadata()
-		
-		switch issuerMetadata {
-		case .success(let metaData):
-			if let authorizationServer = metaData.authorizationServers?.first {
-				let authServerMetadata = await AuthorizationServerMetadataResolver(oidcFetcher: Fetcher(session: urlSession), oauthFetcher: Fetcher(session: urlSession)).resolve(url: authorizationServer)
-				let configuration = try getCredentialIdentifier(credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: metaData.display, credentialsSupported: metaData.credentialsSupported, identifier: identifier, docType: docType, scope: scope)
-				//				try await initSecurityKeys(algSupported: Set(configuration.algValuesSupported))
-				let offer = try CredentialOffer(credentialIssuerIdentifier: credentialIssuerIdentifier, credentialIssuerMetadata: metaData, credentialConfigurationIdentifiers: [configuration.configurationIdentifier], grants: nil, authorizationServerMetadata: try authServerMetadata.get())
-				
-				let dPopConstructor = DPoPConstructor(algorithm: JWSAlgorithm(.ES256), jwk: wia.jwk, privateKey: .secKey(wia.privateKey))
-				// Authorize with auth code flow
-				let issuer = try await getIssuer(offer: offer, with: dPopConstructor)
-				
-				let authorizedOutcome = (try await authorizePARWithAuthCodeUseCase(issuer: issuer, offer: offer, wia: wia)).1
-				if case .presentation_request(let url) = authorizedOutcome, let parRequested {
-					logger.info("Dynamic issuance request with url: \(url)")
-					let uuid = UUID().uuidString
-					Self.metadataCache[uuid] = offer
-					let outcome = IssuanceOutcome.pending(PendingIssuanceModel(pendingReason: .presentation_request_url(url.absoluteString), configuration: configuration, metadataKey: uuid, pckeCodeVerifier: parRequested.pkceVerifier.codeVerifier, pckeCodeVerifierMethod: parRequested.pkceVerifier.codeVerifierMethod ))
-					return (outcome, configuration.format)
-				}
-				guard case .authorized(let authorized) = authorizedOutcome else { throw WalletError(description: "Invalid authorized request outcome") }
-				let outcome = try await issueOfferedCredentialInternal(authorized, issuer: issuer, configuration: configuration, claimSet: claimSet)
-				return (outcome, configuration.format)
-			} else {
-				throw WalletError(description: "Invalid authorization server")
-			}
-		case .failure:
-			throw WalletError(description: "Invalid issuer metadata")
-		}
-	}*/
-
-//	private func getIssuer(offer: CredentialOffer, with dPopConstructor: DPoPConstructorType) async throws -> Issuer {
-//		try await MainActor.run {
-//			try Issuer(authorizationServerMetadata: offer.authorizationServerMetadata, issuerMetadata: offer.credentialIssuerMetadata, config: config, parPoster: Poster(session: urlSession), tokenPoster: Poster(session: urlSession), requesterPoster: Poster(session: urlSession), deferredRequesterPoster: Poster(session: urlSession), notificationPoster: Poster(session: urlSession), dpopConstructor: dPopConstructor)
-//		}
-//	}
 
 	private func fetchIssuerAndOfferWithLatestMetadata(docTypeIdentifier: DocTypeIdentifier, dpopConstructor: DPoPConstructorType) async throws -> (Issuer?, CredentialOffer?) {
 		let (credentialIssuerIdentifier, metaData) = try await getIssuerMetadata()
@@ -190,7 +133,6 @@ extension OpenId4VCIService {
 
 		if case let .success(request) = parPlaced,
 		   case let .prepared(authRequested) = request {
-//			OpenId4VCIService.parReqCache = request
 			self.authRequested = authRequested
 			logger.info("--> [AUTHORIZATION] Placed PAR. Get authorization code URL is: \(pushedAuthorizationRequestEndpoint)")
 
@@ -200,70 +142,6 @@ extension OpenId4VCIService {
 		}
 		throw WalletError(description: "Failed to get push authorization code request")
 	}
-
-//	private func authorizePARWithAuthCodeUseCase(issuer: Issuer, offer: CredentialOffer, wia: IssuerDPoPConstructorParam) async throws -> (AuthorizedRequest?, AuthorizeRequestOutcome?) {
-//		var pushedAuthorizationRequestEndpoint = ""
-//		if case let .oidc(metaData) = offer.authorizationServerMetadata,
-//		   let endpoint = metaData.pushedAuthorizationRequestEndpoint {
-//			pushedAuthorizationRequestEndpoint = endpoint
-//		} else if case let .oauth(metaData) = offer.authorizationServerMetadata,
-//				  let endpoint = metaData.pushedAuthorizationRequestEndpoint {
-//			pushedAuthorizationRequestEndpoint = endpoint
-//		}
-//		guard !pushedAuthorizationRequestEndpoint.isEmpty else { throw WalletError(description: "pushed Authorization Request Endpoint is nil") }
-//		logger.info("--> [AUTHORIZATION] Placing PAR to AS server's endpoint \(pushedAuthorizationRequestEndpoint)")
-//		
-//		let parPlaced = try await issuer.pushAuthorizationCodeRequest(credentialOffer: offer)
-//		
-//		if case let .success(request) = parPlaced,
-//		   case let .par(parRequested) = request {
-//			OpenId4VCIService.parReqCache = request
-//			self.parRequested = parRequested
-//			logger.info("--> [AUTHORIZATION] Placed PAR. Get authorization code URL is: \(parRequested.getAuthorizationCodeURL)")
-//			
-//			return (nil, .presentation_request(parRequested.getAuthorizationCodeURL.url))
-//			
-//		} else if case let .failure(failure) = parPlaced {
-//			throw WalletError(description: "Authorization error: \(failure.localizedDescription)")
-//		}
-//		throw WalletError(description: "Failed to get push authorization code request")
-//	}
-	
-	/*private func handleAuthorizationCodeBothCases(issuer: Issuer, request: UnauthorizedRequest, authorizationCode: String) async throws -> AuthorizedRequest {
-		let unAuthorized = await issuer.handleAuthorizationCode(parRequested: request, authorizationCode: .authorizationCode(authorizationCode: authorizationCode))
-		switch unAuthorized {
-		case .success(let request):
-			let authorizedRequest = await issuer.authorizeWithAuthorizationCode(authorizationCode: request)
-			
-			if case let .success(authorized) = authorizedRequest {
-				if case let .proofRequired(token,_, _, _, _, _) = authorized {
-					let at = token.accessToken;    logger.info("--> [AUTHORIZATION] Authorization code exchanged with access token : \(at)")
-					return authorized
-				} else if case let .success(authorized) = authorizedRequest,
-						  case let .noProofRequired(token,_, _, _, _) = authorized {
-					let at = token.accessToken;    logger.info("--> [AUTHORIZATION] Authorization code exchanged with access token : \(at)")
-					return authorized
-				}
-			}
-			throw WalletError(description: "Failed to get access token")
-		case .failure(let error):
-			throw WalletError(description: error.localizedDescription)
-		}
-	}*/
-
-	/*private func convertAuthorizedRequestToParam(authorizedRequest: AuthorizedRequest) -> AuthorizedRequestParams? {
-//		AuthorizedRequestParams(accessToken: authorizedRequest.accessToken.accessToken, refreshToken: authorizedRequest.refreshToken?.refreshToken, cNonce: <#T##String?#>, timeStamp: <#T##TimeInterval#>, dPopNonce: <#T##Nonce?#>)
-
-		var authReqParams: AuthorizedRequestParams? = nil
-		switch authorizedRequest {
-		case .noProofRequired(let accessToken, let refreshToken, _, let timeStamp, let dPopNonce):
-			authReqParams = AuthorizedRequestParams(accessToken: accessToken.accessToken, refreshToken: refreshToken?.refreshToken, cNonce: nil, timeStamp: timeStamp, dPopNonce: dPopNonce)
-		case .proofRequired(let accessToken, let refreshToken, let cNonce, _, let timeStamp, let dPopNonce):
-			authReqParams = AuthorizedRequestParams(accessToken: accessToken.accessToken, refreshToken: refreshToken?.refreshToken, cNonce: cNonce.value, timeStamp: timeStamp, dPopNonce: dPopNonce)
-		}
-		return authReqParams
-
-	}*/
 }
 
 public struct IssuerDPoPConstructorParam {
