@@ -47,18 +47,13 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	public var trustedReaderCertificates: [Data]?
 	/// Method to perform mdoc authentication (MAC or signature). Defaults to device MAC
 	public var deviceAuthMethod: DeviceAuthMethod = .deviceMac
-	/// OpenID4VP verifier api URL (used for preregistered clients)
-	public var verifierApiUri: String?
-	/// OpenID4VP verifier redirect URI (used for redirectUri clients)
-	public var verifierRedirectUri: String?
-	/// OpenID4VP verifier legal name (used for preregistered clients)
-	public var verifierLegalName: String?
 	/// OpenID4VCI issuer URL
 	public var openID4VciIssuerUrl: String? {
 		didSet { Task { if oldValue != openID4VciIssuerUrl || openID4VciIssuerUrl == nil { await OpenId4VCIService.clearCachedOfferMetadata(); await OpenId4VCIService.clearIssuerMetadataCache() } } }
 	}
 	/// preferred UI culture for localization of display names. It must be a 2-letter language code. If not set, the system locale is used
 	public var uiCulture: String?
+	public var openID4VpConfig: OpenId4VpConfiguration
 	/// OpenID4VCI issuer parameters
 	public var openID4VciConfig: OpenId4VCIConfiguration
 	/// This variable can be used to set a custom networking client for network requests.
@@ -78,8 +73,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	///   - accessGroup: The access group for the keychain. Optional.
 	///   - trustedReaderCertificates: An array of trusted reader certificates. Optional.
 	///   - userAuthenticationRequired: A boolean indicating if user authentication is required when issuing or presenting a document. Defaults to `true`.
-	///   - verifierApiUri: The URI for the default verifier API. Optional.
-	///   - verifierRedirectUri: Verifier redirect URI. Optional.
+	///   - openID4VpConfig: The configuration for OpenID4VP. Optional.
 	///   - openID4VciIssuerUrl: The URL for the default OpenID4VCI issuer. Optional.
 	///   - openID4VciConfig: The configuration for OpenID4VCI. Optional.
 	///   - networking: The networking Client to use for network requests. Optional.
@@ -92,7 +86,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	/// ```swift
 	/// let wallet = try! EudiWallet(serviceName: "my_wallet_app", trustedReaderCertificates: [Data(name: "eudi_pid_issuer_ut", ext: "der")!])
 	/// ```
-	public init(storageService: (any DataStorageService)? = nil, serviceName: String? = nil, accessGroup: String? = nil, trustedReaderCertificates: [Data]? = nil, userAuthenticationRequired: Bool = true, verifierApiUri: String? = nil, openID4VciIssuerUrl: String? = nil, openID4VciConfig: OpenId4VCIConfiguration? = nil, networking: (any NetworkingProtocol)? = nil, logFileName: String? = nil, secureAreas: [any SecureArea]? = nil, transactionLogger: (any TransactionLogger)? = nil, modelFactory: (any DocClaimsDecodableFactory)? = nil) throws {
+	public init(storageService: (any DataStorageService)? = nil, serviceName: String? = nil, accessGroup: String? = nil, trustedReaderCertificates: [Data]? = nil, userAuthenticationRequired: Bool = true, openID4VpConfig: OpenId4VpConfiguration? = nil, openID4VciIssuerUrl: String? = nil, openID4VciConfig: OpenId4VCIConfiguration? = nil, networking: (any NetworkingProtocol)? = nil, logFileName: String? = nil, secureAreas: [any SecureArea]? = nil, transactionLogger: (any TransactionLogger)? = nil, modelFactory: (any DocClaimsDecodableFactory)? = nil) throws {
 
 		try Self.validateServiceParams(serviceName: serviceName)
 		self.serviceName = serviceName ?? Self.defaultServiceName
@@ -103,7 +97,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		#if DEBUG
 		self.userAuthenticationRequired = false
 		#endif
-		self.verifierApiUri	= verifierApiUri
+		self.openID4VpConfig = openID4VpConfig ?? OpenId4VpConfiguration()
 		self.openID4VciIssuerUrl = openID4VciIssuerUrl
 		self.openID4VciConfig = openID4VciConfig ?? OpenId4VCIConfiguration()
 		self.networkingVci = OpenID4VCINetworking(networking: networking ?? URLSession.shared)
@@ -259,7 +253,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 			throw PresentationSession.makeError(str: "Invalid document status for deferred issuance: \(deferredDoc.status)")
 		}
 		let issueReq = try IssueRequest(id: deferredDoc.id, keyOptions: keyOptions)
-		let openId4VCIService = await OpenId4VCIService(issueRequest: issueReq, credentialIssuerURL: "", uiCulture: uiCulture, config: self.openID4VciConfig.toOpenId4VCIConfig(), cacheIssuerMetadata: self.openID4VciConfig.cacheIssuerMetadata, networking: networkingVci)
+		let openId4VCIService = await OpenId4VCIService(issueRequest: issueReq, credentialIssuerURL: "", uiCulture: uiCulture, config: self.openID4VciConfig.toOpenId4VCIConfig(), cacheIssuerMetadata: false, networking: networkingVci)
 		let data = try await openId4VCIService.requestDeferredIssuance(deferredDoc: deferredDoc)
 		guard case .issued(_, _) = data else { return deferredDoc }
 		return try await finalizeIssuing(issueOutcome: data, docType: deferredDoc.docType, format: deferredDoc.docDataFormat, issueReq: issueReq, openId4VCIService: openId4VCIService)
@@ -533,7 +527,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 				let bleSvc = try BlePresentationService(parameters: parameters)
 				return PresentationSession(presentationService: bleSvc, storageManager: storage, storageService: storage.storageService, docIdToPresentInfo: docIdToPresentInfo, documentKeyIndexes: parameters.documentKeyIndexes, userAuthenticationRequired: userAuthenticationRequired, transactionLogger: sessionTransactionLogger ?? transactionLogger)
 			case .openid4vp(let qrCode):
-				let openIdSvc = try OpenId4VpService(parameters: parameters, qrCode: qrCode, openId4VpVerifierApiUri: self.verifierApiUri, openId4VpVerifierLegalName: self.verifierLegalName, openId4VpVerifierRedirectUri: self.verifierRedirectUri, networking: networkingVp)
+				let openIdSvc = try OpenId4VpService(parameters: parameters, qrCode: qrCode, openID4VpConfig: self.openID4VpConfig, networking: networkingVp)
 				return PresentationSession(presentationService: openIdSvc, storageManager: storage, storageService: storage.storageService, docIdToPresentInfo: docIdToPresentInfo, documentKeyIndexes: parameters.documentKeyIndexes, userAuthenticationRequired: userAuthenticationRequired, transactionLogger: sessionTransactionLogger ?? transactionLogger)
 			default:
 				return PresentationSession(presentationService: FaultPresentationService(error: PresentationSession.makeError(str: "Use beginPresentation(service:)")), storageManager: storage, storageService: storage.storageService, docIdToPresentInfo: docIdToPresentInfo, documentKeyIndexes: parameters.documentKeyIndexes, userAuthenticationRequired: false, transactionLogger: sessionTransactionLogger ?? transactionLogger)
