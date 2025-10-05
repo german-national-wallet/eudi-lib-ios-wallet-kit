@@ -285,11 +285,13 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 		let rsaPublicKey = try? KeyController.generateRSAPublicKey(from: rsaPrivateKey) else { return nil }
 		guard let rsaJWK = try? RSAPublicKey(publicKey: rsaPublicKey, additionalParameters: ["use": "sig", "kid": UUID().uuidString, "alg": "RS256"]) else { return nil }
 		guard let keySet = try? WebKeySet(jwk: rsaJWK) else { return nil }
-
-		var supportedClientIdPrefixes: [SupportedClientIdPrefix] = [.redirectUri, .x509SanDns(trust: chainVerifier)]
-		if let verifierApiUrl = openId4VpVerifierApiUri, let verifierLegalName = openId4VpVerifierLegalName {
-			let verifierMetaData = PreregisteredClient(clientId: "Verifier", legalName: verifierLegalName, jarSigningAlg: JWSAlgorithm(.RS256), jwkSetSource: WebKeySource.fetchByReference(url: URL(string: "\(verifierApiUrl)/wallet/public-keys.json")!))
-			supportedClientIdPrefixes += [.preregistered(clients: [verifierMetaData.clientId: verifierMetaData])]
+		let supportedClientIdPrefixes: [SupportedClientIdPrefix] = openID4VpConfig.clientIdSchemes.map { cids in
+			switch cids {
+				case .redirectUri: .redirectUri
+				case .x509Hash: .x509Hash(trust: chainVerifier)
+				case .x509SanDns: .x509SanDns(trust: chainVerifier)
+				case .preregistered(let clients): .preregistered(clients: Dictionary(uniqueKeysWithValues: clients.map { ($0.clientId, $0) }))
+			}
 		}
 		let res = SiopOpenId4VPConfiguration(subjectSyntaxTypesSupported: [.decentralizedIdentifier, .jwkThumbprint], preferredSubjectSyntaxType: .jwkThumbprint, decentralizedIdentifier: try! DecentralizedIdentifier(rawValue: "did:example:123"), privateKey: privateKey, publicWebKeySet: keySet, supportedClientIdSchemes: supportedClientIdPrefixes, vpFormatsSupported: [],  jarConfiguration: .encryptionOption, vpConfiguration: .default(), session: networking, responseEncryptionConfiguration: .default())
 		return res

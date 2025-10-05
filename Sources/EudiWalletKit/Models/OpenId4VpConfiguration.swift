@@ -41,13 +41,10 @@ public enum ClientIdScheme: Sendable {
     case redirectUri
 }
 
-public struct OpenId4VpConfiguration: Sendable {
+public struct OpenId4VpConfiguration {
 	let clientIdSchemes: [ClientIdScheme]
 	public init() {
-		self.clientIdSchemes = [.x509SanDns, .x509Hash]
-	}
-	public init(clientIdSchemes: [ClientIdScheme]) {
-		self.clientIdSchemes = clientIdSchemes
+		self.clientIdSchemes = [.redirectUri, .x509SanDns, .x509Hash]
 	}
 }
 
