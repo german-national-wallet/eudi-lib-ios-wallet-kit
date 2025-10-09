@@ -1,5 +1,5 @@
 {
-  "originHash" : "833c3e3f80dbcb954b90974f1530854efa48c8417750b5825daf3ce18b23eafc",
+  "originHash" : "be4e040f7ff34f902f66d466889e3b01d25257cf693c405be4292727998dde6b",
   "pins" : [
     {
       "identity" : "blueecc",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/krzyzanowskim/CryptoSwift.git",
       "state" : {
-        "revision" : "729e01bc9b9dab466ac85f21fb9ee2bc1c61b258",
-        "version" : "1.8.4"
+        "revision" : "e45a26384239e028ec87fbcc788f513b67e10d8f",
+        "version" : "1.9.0"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-iso18013-data-model.git",
       "state" : {
-        "revision" : "ef575d483fec3840e461ef38e6154aee3f7519b9",
-        "version" : "0.7.6"
+        "revision" : "a2b2d3af28491ef56dd8bc189be3e7e57d789819",
+        "version" : "0.8.1"
       }
     },
     {
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-iso18013-data-transfer.git",
       "state" : {
-        "revision" : "f9293a56d34ab6927faebf69b79f8ef0e2ba3448",
-        "version" : "0.7.7"
+        "revision" : "8b99b604f3bf67507133af6680485c9578d9708f",
+        "version" : "0.8.1"
       }
     },
     {
@@ -42,17 +42,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-iso18013-security.git",
       "state" : {
-        "revision" : "1037552695e8372551a73fae41dad01442616d82",
-        "version" : "0.6.7"
+        "revision" : "ec5b879a101da94a26ff5da79e37f47b0751fe62",
+        "version" : "0.7.1"
       }
     },
     {
       "identity" : "eudi-lib-ios-openid4vci-swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-openid4vci-swift.git",
+      "location" : "https://github.com/niscy-eudiw/eudi-lib-ios-openid4vci-swift",
       "state" : {
-        "revision" : "508556bdd1cf517735a0e6405c9dbd2704e6a892",
-        "version" : "0.15.4"
+        "revision" : "87df8bfeb6f84665a93541693d9ccd95d7a419e0",
+        "version" : "0.7.6"
       }
     },
     {
@@ -60,8 +60,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-siop-openid4vp-swift.git",
       "state" : {
-        "revision" : "044b27cf535b11158d673e7f6a5b457a9eb69049",
-        "version" : "0.17.0"
+        "revision" : "fd1aec9851b3ce89f06c6a9cfc380c7e74ad62ce",
+        "version" : "0.17.5"
       }
     },
     {
@@ -78,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-wallet-storage.git",
       "state" : {
-        "revision" : "f307c885c7f033318c9024b08d53c4537761fd12",
-        "version" : "0.6.1"
+        "revision" : "ae0bc4f35fd7518007f8143518320a91395f0ede",
+        "version" : "0.7.0"
       }
     },
     {
@@ -87,8 +87,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-sdjwt-swift.git",
       "state" : {
-        "revision" : "aaf68f574b194a121490a6f1bffc2ddbbdbce4a2",
-        "version" : "0.8.0"
+        "revision" : "86070708b8042a5a1291c20381b0f57fe69921cd",
+        "version" : "0.9.1"
       }
     },
     {
@@ -96,8 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/beatt83/jose-swift.git",
       "state" : {
-        "revision" : "57fe5a03c83feaf73a84b23c02e641f86482e313",
-        "version" : "4.0.2"
+        "revision" : "8d087c7d8333310449aff4c9eb2431fbb4f1eb9f",
+        "version" : "6.0.0"
       }
     },
     {
@@ -224,6 +224,15 @@
       "state" : {
         "revision" : "4def3c1c772ca90ad5e7bfc8ac437c3b0b4276cf",
         "version" : "7.1.5"
+      }
+    },
+    {
+      "identity" : "zlib",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/DLTAStudio/zlib.git",
+      "state" : {
+        "revision" : "ad7db0fdde74b88b3ac9b20d412c3129e7eade34",
+        "version" : "1.0.1"
       }
     }
   ],
