@@ -62,7 +62,6 @@ extension OpenId4VCIConfiguration {
 	}
 
 	func toOpenId4VCIConfig() -> OpenId4VCIConfig {
-		OpenId4VCIConfig(client: client, authFlowRedirectionURI: authFlowRedirectionURI, authorizeIssuanceConfig: authorizeIssuanceConfig, usePAR: usePAR, clientAttestationPoPBuilder: DefaultClientAttestationPoPBuilder.default,
-						 useDpopIfSupported: useDpopIfSupported)
+		OpenId4VCIConfig(client: client, authFlowRedirectionURI: authFlowRedirectionURI, authorizeIssuanceConfig: authorizeIssuanceConfig, usePAR: usePAR, useDpopIfSupported: useDpopIfSupported)
 	}
 }
