@@ -343,6 +343,8 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		}
 	}
 
+
+
 	/// Issue documents by offer URI.
 	/// - Parameters:
 	///   - offerUri: url with offer
