@@ -209,17 +209,18 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	/// If ``userAuthenticationRequired`` is true, user authentication is required. The authentication prompt message has localisation key "issue_document"
 	///  - Parameters:
 	///   - docTypeIdentifier: Document type identifier (msoMdoc, sdJwt, or configuration identifier)
+	///   - credentialOptions: Credential options specifying batch size and credential policy. If nil, defaults are fetched from issuer metadata. Use `getDefaultCredentialOptions(_:)` to retrieve issuer-recommended settings.
 	///   - keyOptions: Key options (secure area name and other options) for the document issuing (optional)
 	///   - promptMessage: Prompt message for biometric authentication (optional)
 	/// - Returns: The document issued. It is saved in storage.
 	@discardableResult public func issueDocument(docTypeIdentifier: DocTypeIdentifier, credentialOptions: CredentialOptions?, keyOptions: KeyOptions? = nil, promptMessage: String? = nil) async throws -> WalletStorage.Document {
-		let usedKeyOptions = try await validateKeyOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: credentialOptions)
+		let usedKeyOptions = try await validateCredentialOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: credentialOptions)
 		let openId4VCIService = try await prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: nil, credentialOptions: usedKeyOptions, keyOptions: keyOptions, disablePrompt: false, promptMessage: promptMessage)
 		let data = try await openId4VCIService.issueDocument(docTypeIdentifier: docTypeIdentifier, promptMessage: promptMessage)
 		return try await finalizeIssuing(issueOutcome: data.0, docType: docTypeIdentifier.docType, format: data.1, issueReq: openId4VCIService.issueReq)
 	}
 
-	func validateKeyOptions(docTypeIdentifier: DocTypeIdentifier, credentialOptions: CredentialOptions?, offer: CredentialOffer? = nil) async throws -> CredentialOptions {
+	func validateCredentialOptions(docTypeIdentifier: DocTypeIdentifier, credentialOptions: CredentialOptions?, offer: CredentialOffer? = nil) async throws -> CredentialOptions {
 		let dvci = try await getdefaultOpenId4VCIService()
 		let defaultCredentialOptions: CredentialOptions
 		if let offer  {
@@ -237,17 +238,25 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		return usedCredentialOptions
 	}
 
-	/// Get default key options (batch-size and credential policy) for a document type
+	/// Get default credential options (batch-size and credential policy) for a document type
+	///
+	/// Queries the issuer's metadata to retrieve recommended credential configuration. The returned `CredentialOptions` contains:
+	/// - `batchSize`: Number of credentials to issue in a batch (enables multiple presentations before re-issuance)
+	/// - `credentialPolicy`: Either `.oneTimeUse` (credential consumed after presentation) or `.rotateUse` (unlimited presentations)
 	/// - Parameters:
 	///  - docTypeIdentifier: Document type identifier (msoMdoc, sdJwt, or configuration identifier)
-	public func getDefaultKeyOptions(_ docTypeIdentifier: DocTypeIdentifier) async throws -> CredentialOptions {
+	/// - Returns: Issuer-recommended credential options
+	public func getDefaultCredentialOptions(_ docTypeIdentifier: DocTypeIdentifier) async throws -> CredentialOptions {
 		let openId4VCIService = try await getdefaultOpenId4VCIService()
 		return try await openId4VCIService.getMetadataDefaultCredentialOptions(docTypeIdentifier)
 	}
 	/// Request a deferred issuance based on a stored deferred document. On success, the deferred document is replaced with the issued document.
 	///
 	/// The caller does not need to reload documents, storage manager collections are updated.
-	/// - Parameter deferredDoc: A stored document with deferred status
+	/// - Parameters:
+	///   - deferredDoc: A stored document with deferred status
+	///   - credentialOptions: Credential options specifying batch size and credential policy for the deferred document
+	///   - keyOptions: Key options (secure area name and other options) for the document issuing (optional)
 	/// - Returns: The issued document in case it was approved in the backend and the deferred data are valid, otherwise a deferred status document
 	@discardableResult public func requestDeferredIssuance(deferredDoc: WalletStorage.Document, credentialOptions: CredentialOptions, keyOptions: KeyOptions? = nil) async throws -> WalletStorage.Document {
 		guard deferredDoc.status == .deferred else { throw PresentationSession.makeError(str: "Invalid document status for deferred issuance: \(deferredDoc.status)") }
@@ -258,15 +267,18 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		return try await finalizeIssuing(issueOutcome: data, docType: deferredDoc.docType, format: deferredDoc.docDataFormat, issueReq: issueReq)
 	}
 
-	/// Resume pending issuance. Supports dynamic isuuance scenario
+	/// Resume pending issuance. Supports dynamic issuance scenario
 	///
 	/// The caller does not need to reload documents, storage manager collections are updated.
-	/// - Parameter pendingDoc: A temporary document with pending status
-	///
+	/// - Parameters:
+	///   - pendingDoc: A temporary document with pending status
+	///   - webUrl: The authorization URL returned from the presentation service (for dynamic issuance)
+	///   - credentialOptions: Credential options specifying batch size and credential policy for the pending document
+	///   - keyOptions: Key options (secure area name and other options) for the document issuing (optional)
 	/// - Returns: The issued document in case it was approved in the backend and the pendingDoc data are valid, otherwise a pendingDoc status document
 	@discardableResult public func resumePendingIssuance(pendingDoc: WalletStorage.Document, webUrl: URL?, credentialOptions: CredentialOptions, keyOptions: KeyOptions? = nil) async throws -> WalletStorage.Document {
 		guard pendingDoc.status == .pending, let docTypeIdentifier = pendingDoc.docTypeIdentifier else { throw PresentationSession.makeError(str: "Invalid document status for pending issuance: \(pendingDoc.status)")}
-		let usedCredentialOptions = try await validateKeyOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: credentialOptions)
+		let usedCredentialOptions = try await validateCredentialOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: credentialOptions)
 		let openId4VCIService = try await prepareIssuing(id: pendingDoc.id, docTypeIdentifier: docTypeIdentifier, displayName: nil, credentialOptions: usedCredentialOptions, keyOptions: keyOptions, disablePrompt: true, promptMessage: nil)
 		let outcome = try await openId4VCIService.resumePendingIssuance(pendingDoc: pendingDoc, webUrl: webUrl)
 		if case .pending(_) = outcome { return pendingDoc }
@@ -339,8 +351,6 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		}
 	}
 
-
-
 	/// Issue documents by offer URI.
 	/// - Parameters:
 	///   - offerUri: url with offer
@@ -357,7 +367,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		var openId4VCIServices = [OpenId4VCIService]()
 		for (i, docTypeModel) in docTypes.enumerated() {
 			guard let docTypeIdentifier = docTypeModel.docTypeIdentifier else { continue }
-			let usedCredentialOptions = try await validateKeyOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: docTypeModel.credentialOptions, offer: offer)
+			let usedCredentialOptions = try await validateCredentialOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: docTypeModel.credentialOptions, offer: offer)
 			openId4VCIServices.append(try await prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: i > 0 ? nil : docTypes.map(\.displayName).joined(separator: ", "), credentialOptions: usedCredentialOptions, keyOptions: docTypeModel.keyOptions, disablePrompt: i > 0, promptMessage: promptMessage))
 		}
 		let (auth, issuer, credentialInfos) = try await openId4VCIServices.first!.authorizeOffer(offerUri: offerUri, docTypeModels: docTypes, txCodeValue: txCodeValue)
@@ -373,7 +383,10 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	///
 	/// - Parameters:
 	///   - id: Document identifier
-	///   - issuer: Issuer function
+	///   - credentialOptions: Credential options specifying batch size and credential policy
+	///   - keyOptions: Key options (secure area name and other options) for the document issuing (optional)
+	///   - bDeferred: Whether this is for deferred issuance (default: false)
+	/// - Returns: An issue request object that can be used to complete the issuance process
 	public func beginIssueDocument(id: String, credentialOptions: CredentialOptions, keyOptions: KeyOptions?, bDeferred: Bool = false) async throws -> IssueRequest {
 		let request = try IssueRequest(id: id, credentialOptions: credentialOptions, keyOptions: keyOptions)
 		return request
