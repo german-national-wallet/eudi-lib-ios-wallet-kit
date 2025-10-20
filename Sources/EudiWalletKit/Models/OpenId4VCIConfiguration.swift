@@ -19,18 +19,20 @@ import JOSESwift
 import OpenID4VCI
 import MdocSecurity18013
 
-public struct OpenId4VCIConfiguration {
+public struct OpenId4VCIConfiguration: Sendable {
 	public let client: Client
 	public let authFlowRedirectionURI: URL
 	public let authorizeIssuanceConfig: AuthorizeIssuanceConfig
 	public let usePAR: Bool
+	public let useDpopIfSupported: Bool
 	public let cacheIssuerMetadata: Bool
 
-	public init(client: Client? = nil, authFlowRedirectionURI: URL? = nil, authorizeIssuanceConfig: AuthorizeIssuanceConfig = .favorScopes, usePAR: Bool = true, useDPoP: Bool = false, cacheIssuerMetadata: Bool = true) {
+	public init(client: Client? = nil, authFlowRedirectionURI: URL? = nil, authorizeIssuanceConfig: AuthorizeIssuanceConfig = .favorScopes, usePAR: Bool = true, useDpopIfSupported: Bool = true, cacheIssuerMetadata: Bool = true) {
 		self.client = client ?? .public(id: "wallet-dev")
 		self.authFlowRedirectionURI = authFlowRedirectionURI ?? URL(string: "eudi-openid4ci://authorize")!
 		self.authorizeIssuanceConfig = authorizeIssuanceConfig
 		self.usePAR = usePAR
+		self.useDpopIfSupported = useDpopIfSupported
 		self.cacheIssuerMetadata = cacheIssuerMetadata
 	}
 }
@@ -60,6 +62,7 @@ extension OpenId4VCIConfiguration {
 	}
 
 	func toOpenId4VCIConfig() -> OpenId4VCIConfig {
-		OpenId4VCIConfig(client: client, authFlowRedirectionURI: authFlowRedirectionURI, authorizeIssuanceConfig: authorizeIssuanceConfig, usePAR: usePAR)
+		OpenId4VCIConfig(client: client, authFlowRedirectionURI: authFlowRedirectionURI, authorizeIssuanceConfig: authorizeIssuanceConfig, usePAR: usePAR, clientAttestationPoPBuilder: DefaultClientAttestationPoPBuilder.default,
+						 useDpopIfSupported: useDpopIfSupported)
 	}
 }

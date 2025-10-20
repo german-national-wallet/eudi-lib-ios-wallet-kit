@@ -23,7 +23,7 @@ extension EudiWallet {
 			return nil
 		}
 
-		return try await finalizeIssuing(issueOutcome: issuance, docType: docTypeIdentifier.docType, format: dataFormat, issueReq: openId4VCIService.issueReq, openId4VCIService: openId4VCIService)
+		return try await finalizeIssuing(issueOutcome: issuance, docType: docTypeIdentifier.docType, format: dataFormat, issueReq: openId4VCIService.issueReq)
 	}
 
 	@MainActor
@@ -36,7 +36,7 @@ extension EudiWallet {
 		let openId4VCIService = try await prepareIssuing(id: pendingDoc.id, docTypeIdentifier: docTypeIdentifier, displayName: nil, keyOptions: usedKeyOptions, disablePrompt: true, promptMessage: nil)
 		let (outcome, authRequest) = try await openId4VCIService.resumePendingIssuance(pendingDoc: pendingDoc, authorizationCode: authorizationCode)
 		if case .pending(_) = outcome { return (pendingDoc, nil) }
-		let res = try await finalizeIssuing(issueOutcome: outcome, docType: pendingDoc.docType, format: pendingDoc.docDataFormat, issueReq: openId4VCIService.issueReq, openId4VCIService: openId4VCIService)
+		let res = try await finalizeIssuing(issueOutcome: outcome, docType: pendingDoc.docType, format: pendingDoc.docDataFormat, issueReq: openId4VCIService.issueReq)
 		return (res, authRequest)
 	}
 
@@ -63,7 +63,7 @@ extension EudiWallet {
 				var documents = [WalletStorage.Document]()
 				for i in 0..<batchCount {
 					let (issueReq, openId4VCIService) = openId4VCIServices[i]
-					let document = (try await finalizeIssuing(issueOutcome: issuanceOutcome, docType: docType, format: docDataFormat, issueReq: issueReq, openId4VCIService: openId4VCIService))
+					let document = (try await finalizeIssuing(issueOutcome: issuanceOutcome, docType: docType, format: docDataFormat, issueReq: issueReq))
 					documents.append(document)
 				}
 				return (documents.first, authorizedRequestParams)

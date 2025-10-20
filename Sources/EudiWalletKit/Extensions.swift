@@ -29,6 +29,15 @@ extension String {
 		NSLocalizedString(self, comment: "")
 	}
 }
+
+func secCall<Result>(_ body: (_ resultPtr: UnsafeMutablePointer<Unmanaged<CFError>?>) -> Result?) throws -> Result {
+	var errorQ: Unmanaged<CFError>? = nil
+	guard let result = body(&errorQ) else {
+		throw errorQ!.takeRetainedValue() as Error
+	}
+	return result
+}
+
 extension Display {
 	public var displayMetadata: MdocDataModel18013.DisplayMetadata {
 		let logoMetadata = LogoMetadata(urlString: logo?.uri?.absoluteString, alternativeText: logo?.alternativeText)
@@ -44,15 +53,15 @@ extension Bundle {
 }
 
 extension Data {
-      public init?(base64urlEncoded input: String) {
-          var base64 = input
-          base64 = base64.replacingOccurrences(of: "-", with: "+")
-          base64 = base64.replacingOccurrences(of: "_", with: "/")
-          while base64.count % 4 != 0 {
-              base64 = base64.appending("=")
-          }
-          self.init(base64Encoded: base64)
-      }
+	  public init?(base64urlEncoded input: String) {
+		  var base64 = input
+		  base64 = base64.replacingOccurrences(of: "-", with: "+")
+		  base64 = base64.replacingOccurrences(of: "_", with: "/")
+		  while base64.count % 4 != 0 {
+			  base64 = base64.appending("=")
+		  }
+		  self.init(base64Encoded: base64)
+	  }
 }
 
 extension FileManager {
@@ -66,13 +75,13 @@ extension FileManager {
 }
 
 extension Encodable {
-    /// Converting object to postable JSON
-    func toJSON(_ encoder: JSONEncoder = JSONEncoder()) -> [String: Any] {
-        guard let data = try? encoder.encode(self),
-              let object = try? JSONSerialization.jsonObject(with: data, options: .allowFragments),
-              let json = object as? [String: Any] else { return [:] }
-        return json
-    }
+	/// Converting object to postable JSON
+	func toJSON(_ encoder: JSONEncoder = JSONEncoder()) -> [String: Any] {
+		guard let data = try? encoder.encode(self),
+			  let object = try? JSONSerialization.jsonObject(with: data, options: .allowFragments),
+			  let json = object as? [String: Any] else { return [:] }
+		return json
+	}
 }
 
 extension WalletStorage.Document {
@@ -109,7 +118,7 @@ extension WalletStorage.Document {
 extension MdocDataModel18013.CoseKeyPrivate {
   // decode private key data cbor string and save private key in key chain
 	public static func from(base64: String) async -> MdocDataModel18013.CoseKeyPrivate? {
-		guard let d = Data(base64Encoded: base64), let obj = try? CBOR.decode([UInt8](d)), let coseKey = CoseKey(cbor: obj), let cd = obj[-4], case let CBOR.byteString(rd) = cd else { return nil }
+		guard let d = Data(base64Encoded: base64), let obj = try? CBOR.decode([UInt8](d)), let coseKey = try? CoseKey(cbor: obj), let cd = obj[-4], case let CBOR.byteString(rd) = cd else { return nil }
 		let storage = await SecureAreaRegistry.shared.defaultSecurityArea!.getStorage()
 		let sampleSA = SampleDataSecureArea.create(storage: storage)
 		let keyData = NSMutableData(bytes: [0x04], length: [0x04].count)
@@ -188,6 +197,10 @@ extension DocMetadata {
 	}
 }
 
+extension DocKeyInfo {
+	static var `default`: Self { DocKeyInfo(secureAreaName: SoftwareSecureArea.name, batchSize: 1, credentialPolicy: .rotateUse) }
+}
+
 extension URL {
 	func getBaseUrl() -> String {
 		var urlString = scheme! + "://" + host!
@@ -249,9 +262,9 @@ extension JSON {
 
 
 extension SecureAreaSigner: eudi_lib_sdjwt_swift.AsyncSignerProtocol {
-    func signAsync(_ data: Data) async throws -> Data {
-        return try await sign(data)
-    }
+	func signAsync(_ data: Data) async throws -> Data {
+		return try await sign(data)
+	}
 
 }
 

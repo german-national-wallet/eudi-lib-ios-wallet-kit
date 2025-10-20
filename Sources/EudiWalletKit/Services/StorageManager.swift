@@ -139,10 +139,9 @@ public final class StorageManager: ObservableObject, @unchecked Sendable {
 
 	public static func toCborMdocModel(doc: WalletStorage.Document, uiCulture: String?, modelFactory: (any DocClaimsDecodableFactory)? = nil) -> (any DocClaimsDecodable)? {
 		guard let (d, _, _, _) = doc.getDataForTransfer() else { return nil }
-		// guard let str = D dd = Data(base64Encoded: d.1.bytes)  else { return nil }
-		guard let iss = IssuerSigned(data: d.1.bytes) else { logger.error("Could not decode IssuerSigned"); return nil }
+		guard let iss = try? IssuerSigned(data: d.1.bytes) else { logger.error("Could not decode IssuerSigned"); return nil }
 		let docMetadata = DocMetadata(from: doc.metadata)
-		guard let docKeyInfo = DocKeyInfo(from: doc.docKeyInfo) else { logger.error("Could not decode DocKeyInfo"); return nil }
+		let docKeyInfo = DocKeyInfo(from: doc.docKeyInfo) ?? .default
 		let md = docMetadata?.getMetadata(uiCulture: uiCulture)
 		let cmd = md?.claimMetadata?.convertToCborClaimMetadata(uiCulture)
 		var retModel: (any DocClaimsDecodable)? = modelFactory?.makeClaimsDecodableFromCbor(id: d.0, createdAt: doc.createdAt, issuerSigned: iss, displayName: md?.displayName, display: md?.display, issuerDisplay: md?.issuerDisplay, credentialIssuerIdentifier: md?.credentialIssuerIdentifier, configurationIdentifier: md?.configurationIdentifier, validFrom: iss.validFrom, validUntil: iss.validUntil, statusIdentifier: iss.issuerAuth.statusIdentifier, credentialPolicy: docKeyInfo.credentialPolicy, secureAreaName: docKeyInfo.secureAreaName, displayNames: cmd?.displayNames, mandatory: cmd?.mandatory)
@@ -160,7 +159,7 @@ public final class StorageManager: ObservableObject, @unchecked Sendable {
 	public static func toSdJwtDocModel(doc: WalletStorage.Document, uiCulture: String?, modelFactory: (any DocClaimsDecodableFactory)? = nil) -> (any DocClaimsDecodable)? {
 		var docClaims = [DocClaim]()
 		let docMetadata: DocMetadata? = DocMetadata(from: doc.metadata)
-		guard let docKeyInfo = DocKeyInfo(from: doc.docKeyInfo) else { logger.error("Could not decode DocKeyInfo"); return nil }
+		let docKeyInfo = DocKeyInfo(from: doc.docKeyInfo) ?? .default
 		let md = docMetadata?.getMetadata(uiCulture: uiCulture)
 		guard let recreatedClaims = recreateSdJwtClaims(docData: doc.data) else { return nil }
 		if let cs = recreatedClaims.json.toClaimsArray(pathPrefix: [], md?.claimMetadata, uiCulture)?.0 { docClaims.append(contentsOf: cs) }
@@ -211,7 +210,7 @@ public final class StorageManager: ObservableObject, @unchecked Sendable {
 			let bValid = (try? await hasAnyCredential(id: m.id)) ?? false
 			guard bValid else { return nil }
 			let docTypedData: DocTypedData? = switch m.docDataFormat {
-				case .cbor: if let iss = IssuerSigned(data: doc.data.bytes) { .msoMdoc(iss) } else { nil }
+				case .cbor: if let iss = try? IssuerSigned(data: doc.data.bytes) { .msoMdoc(iss) } else { nil }
 				case .sdjwt: if let serString = String(data: doc.data, encoding: .utf8), let sd = try? CompactParser().getSignedSdJwt(serialisedString: serString) { .sdJwt(sd) } else { nil }
 			}
 			guard let docTypedData else { return nil }
