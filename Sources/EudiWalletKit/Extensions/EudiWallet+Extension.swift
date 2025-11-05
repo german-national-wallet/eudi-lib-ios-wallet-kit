@@ -14,11 +14,11 @@ import SwiftyJSON
 
 extension EudiWallet {
 	@MainActor
-	@discardableResult public func issuePAR(docTypeIdentifier: DocTypeIdentifier, keyOptions: KeyOptions? = nil, promptMessage: String? = nil, dpopConstructorParam: IssuerDPoPConstructorParam) async throws -> WalletStorage.Document? {
+	@discardableResult public func issuePAR(docTypeIdentifier: DocTypeIdentifier, keyOptions: KeyOptions? = nil, promptMessage: String? = nil, dpopConstructorParam: IssuerDPoPConstructorParam, clientAttestation: ClientAttestation) async throws -> WalletStorage.Document? {
 		let usedKeyOptions = try await validateKeyOptions(docTypeIdentifier: docTypeIdentifier, keyOptions: keyOptions)
 		let openId4VCIService = try await prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: nil, keyOptions: usedKeyOptions, disablePrompt: false, promptMessage: promptMessage)
 
-		let (issuance, dataFormat) = try await openId4VCIService.issuePAR(docTypeIdentifier, promptMessage: promptMessage, dpopConstructorParam: dpopConstructorParam)
+		let (issuance, dataFormat) = try await openId4VCIService.issuePAR(docTypeIdentifier, promptMessage: promptMessage, dpopConstructorParam: dpopConstructorParam, clientAttestation: clientAttestation)
 		guard let issuance else {
 			return nil
 		}

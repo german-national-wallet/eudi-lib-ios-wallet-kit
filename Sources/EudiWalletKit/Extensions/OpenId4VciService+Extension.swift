@@ -14,9 +14,9 @@ import WalletStorage
 
 extension OpenId4VCIService {
 
-	func issuePAR(_ docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil, dpopConstructorParam: IssuerDPoPConstructorParam) async throws -> (IssuanceOutcome?, DocDataFormat) {
+	func issuePAR(_ docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil, dpopConstructorParam: IssuerDPoPConstructorParam, clientAttestation: ClientAttestation) async throws -> (IssuanceOutcome?, DocDataFormat) {
 		logger.log(level: .info, "Issuing document with docType or scope or identifier: \(docTypeIdentifier.value)")
-		let res = try await issueByPARType(docTypeIdentifier, promptMessage: promptMessage, dpopConstructorParam: dpopConstructorParam)
+		let res = try await issueByPARType(docTypeIdentifier, promptMessage: promptMessage, dpopConstructorParam: dpopConstructorParam, clientAttestation: clientAttestation)
 		return res
 	}
 	
@@ -84,7 +84,7 @@ extension OpenId4VCIService {
 		return (nil, nil, nil)
 	}
 
-	private func issueByPARType(_ docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil, dpopConstructorParam: IssuerDPoPConstructorParam) async throws -> (IssuanceOutcome?, DocDataFormat) {
+	private func issueByPARType(_ docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil, dpopConstructorParam: IssuerDPoPConstructorParam, clientAttestation: ClientAttestation) async throws -> (IssuanceOutcome?, DocDataFormat) {
 		let (credentialIssuerIdentifier, metaData) = try await getIssuerMetadata()
 		if let authorizationServer = metaData.authorizationServers?.first {
 			let authServerMetadata = await AuthorizationServerMetadataResolver(oidcFetcher: Fetcher(session: networking), oauthFetcher: Fetcher(session: networking)).resolve(url: authorizationServer)
@@ -93,7 +93,7 @@ extension OpenId4VCIService {
 
 			// Authorize with auth code flow
 			let issuer = try getIssuer(offer: offer)
-			let authorizedOutcome = try await authorizePARWithAuthCodeUseCase(issuer: issuer, offer: offer)
+			let authorizedOutcome = try await authorizePARWithAuthCodeUseCase(issuer: issuer, offer: offer, clientAttestation: clientAttestation)
 			if case .presentation_request(let url) = authorizedOutcome, let authRequested {
 				logger.info("Dynamic issuance request with url: \(url)")
 				let uuid = UUID().uuidString
@@ -124,11 +124,11 @@ extension OpenId4VCIService {
 		return (nil, nil)
 	}
 
-	private func authorizePARWithAuthCodeUseCase(issuer: Issuer, offer: CredentialOffer) async throws ->  AuthorizeRequestOutcome? {
+	private func authorizePARWithAuthCodeUseCase(issuer: Issuer, offer: CredentialOffer, clientAttestation: ClientAttestation) async throws ->  AuthorizeRequestOutcome? {
 		let pushedAuthorizationRequestEndpoint = if case let .oidc(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint { endpoint } else if case let .oauth(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint { endpoint } else { "" }
 		if config.usePAR && pushedAuthorizationRequestEndpoint.isEmpty { logger.info("PAR not supported, Pushed Authorization Request Endpoint is nil") }
 		logger.info("--> [AUTHORIZATION] Placing Request to AS server's endpoint \(pushedAuthorizationRequestEndpoint)")
-		let parPlaced = try await issuer.prepareAuthorizationRequest(credentialOffer: offer)
+		let parPlaced = try await issuer.prepareAuthorizationRequest(credentialOffer: offer, clientAttestation: clientAttestation.wia, clientAttestationPoP: clientAttestation.wiaPop)
 
 		if case let .success(request) = parPlaced,
 		   case let .prepared(authRequested) = request {
@@ -174,5 +174,14 @@ public struct AuthorizedRequestParams: Sendable {
 		self.cNonce = cNonce
 		self.timeStamp = timeStamp
 		self.dPopNonce = dPopNonce
+	}
+}
+public struct ClientAttestation: Sendable {
+	public let wia: String
+	public let wiaPop: String
+
+	public init(wia: String, wiaPop: String) {
+		self.wia = wia
+		self.wiaPop = wiaPop
 	}
 }

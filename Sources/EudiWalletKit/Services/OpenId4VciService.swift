@@ -93,9 +93,9 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 	///   - docTypeIdentifier: the document type identifier specifying the type of document to be issued
 	///   - promptMessage: optional message to prompt the user during issuance
 	/// - Returns: The data of the document
-	func issueDocument(docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil) async throws -> (IssuanceOutcome, DocDataFormat) {
+	func issueDocument(docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil, clientAttestation: ClientAttestation) async throws -> (IssuanceOutcome, DocDataFormat) {
 		logger.log(level: .info, "Issuing document with identifier: \(docTypeIdentifier.value)")
-		let res = try await issueByDocType(docTypeIdentifier, promptMessage: promptMessage)
+		let res = try await issueByDocType(docTypeIdentifier, promptMessage: promptMessage, clientAttestation: clientAttestation)
 		return res
 	}
 
@@ -136,7 +136,7 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 		try Issuer.createDeferredIssuer(deferredCredentialEndpoint: data.deferredCredentialEndpoint, deferredRequesterPoster: Poster(session: networking), config: config)
 	}
 
-	func authorizeOffer(offerUri: String, docTypeModels: [OfferedDocModel], txCodeValue: String?) async throws -> (AuthorizeRequestOutcome, Issuer, [CredentialConfiguration]) {
+	func authorizeOffer(offerUri: String, docTypeModels: [OfferedDocModel], txCodeValue: String?, clientAttestation: ClientAttestation) async throws -> (AuthorizeRequestOutcome, Issuer, [CredentialConfiguration]) {
 		guard let offer = Self.credentialOfferCache[offerUri] else {
 			throw PresentationSession.makeError(str: "offerUri \(offerUri) not resolved. resolveOfferDocTypes must be called first")
 		}
@@ -151,7 +151,7 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 		if preAuthorizedCode != nil && txCodeSpec != nil && txCodeValue == nil {
 			throw PresentationSession.makeError(str: "A transaction code is required for this offer")
 		}
-		let authorizedOutcome = if let preAuthorizedCode, let authCode = try? IssuanceAuthorization(preAuthorizationCode: preAuthorizedCode, txCode: txCodeSpec) { AuthorizeRequestOutcome.authorized(try await issuer.authorizeWithPreAuthorizationCode(credentialOffer: offer, authorizationCode: authCode, client: config.client, transactionCode: txCodeValue).get()) } else { try await authorizeRequestWithAuthCodeUseCase(issuer: issuer, offer: offer) }
+		let authorizedOutcome = if let preAuthorizedCode, let authCode = try? IssuanceAuthorization(preAuthorizationCode: preAuthorizedCode, txCode: txCodeSpec) { AuthorizeRequestOutcome.authorized(try await issuer.authorizeWithPreAuthorizationCode(credentialOffer: offer, authorizationCode: authCode, client: config.client, transactionCode: txCodeValue).get()) } else { try await authorizeRequestWithAuthCodeUseCase(issuer: issuer, offer: offer, clientAttestation: clientAttestation) }
 		return (authorizedOutcome, issuer, credentialInfos)
 	}
 
@@ -200,7 +200,7 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 		}
 	}
 
-	func issueByDocType(_ docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil) async throws -> (IssuanceOutcome, DocDataFormat) {
+	func issueByDocType(_ docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil, clientAttestation: ClientAttestation) async throws -> (IssuanceOutcome, DocDataFormat) {
 		let (credentialIssuerIdentifier, metaData) = try await getIssuerMetadata()
 		if let authorizationServer = metaData.authorizationServers?.first {
 			let authServerMetadata = await AuthorizationServerMetadataResolver(oidcFetcher: Fetcher<OIDCProviderMetadata>(session: networking), oauthFetcher: Fetcher<AuthorizationServerMetadata>(session: networking)).resolve(url: authorizationServer)
@@ -209,7 +209,7 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 			let offer = try CredentialOffer(credentialIssuerIdentifier: credentialIssuerIdentifier, credentialIssuerMetadata: metaData, credentialConfigurationIdentifiers: [configuration.configurationIdentifier], grants: nil, authorizationServerMetadata: try authServerMetadata.get())
 			// Authorize with auth code flow
 			let issuer = try getIssuer(offer: offer)
-			let authorizedOutcome = try await authorizeRequestWithAuthCodeUseCase(issuer: issuer, offer: offer)
+			let authorizedOutcome = try await authorizeRequestWithAuthCodeUseCase(issuer: issuer, offer: offer, clientAttestation: clientAttestation)
 			if case .presentation_request(let url) = authorizedOutcome, let authRequested {
 				logger.info("Dynamic issuance request with url: \(url)")
 				let uuid = UUID().uuidString
@@ -247,11 +247,11 @@ public final class OpenId4VCIService: NSObject, @unchecked Sendable, ASWebAuthen
 			return credentialInfos
 	}
 
-	private func authorizeRequestWithAuthCodeUseCase(issuer: Issuer, offer: CredentialOffer) async throws -> AuthorizeRequestOutcome {
+	private func authorizeRequestWithAuthCodeUseCase(issuer: Issuer, offer: CredentialOffer, clientAttestation: ClientAttestation) async throws -> AuthorizeRequestOutcome {
 		let pushedAuthorizationRequestEndpoint = if case let .oidc(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint { endpoint } else if case let .oauth(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint { endpoint } else { "" }
 		if config.usePAR && pushedAuthorizationRequestEndpoint.isEmpty { logger.info("PAR not supported, Pushed Authorization Request Endpoint is nil") }
 		logger.info("--> [AUTHORIZATION] Placing Request to AS server's endpoint \(pushedAuthorizationRequestEndpoint)")
-		let parPlaced = try await issuer.prepareAuthorizationRequest(credentialOffer: offer)
+		let parPlaced = try await issuer.prepareAuthorizationRequest(credentialOffer: offer, clientAttestation: clientAttestation.wia, clientAttestationPoP: clientAttestation.wiaPop)
 
 		if case let .success(request) = parPlaced, case let .prepared(authRequested) = request {
 			self.authRequested = authRequested
