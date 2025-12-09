@@ -1,5 +1,9 @@
 {
+<<<<<<< HEAD
   "originHash" : "e59dced258576e3b9673ef67b4df0ea255739b244567a3e6ec6ca5b2517a4d19",
+=======
+  "originHash" : "ad49d082ee4379a7824cc7b79f1ab325663a465ffd77deba9c0fc33157315e13",
+>>>>>>> 48e9888 (Refactor key attestation JWT handling in OpenId4VCIService, remove hack to cache attestation key)
   "pins" : [
     {
       "identity" : "blueecc",
@@ -51,8 +55,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/eu-digital-identity-wallet/eudi-lib-ios-openid4vci-swift.git",
       "state" : {
-        "revision" : "3e43e5c2f548aa85edbb27bc240ceab8fcb63544",
-        "version" : "0.19.0"
+        "revision" : "d38e3e81c16609cbe6dd65cd44b9203e0ed7f495",
+        "version" : "0.19.2"
       }
     },
     {
