@@ -52,6 +52,6 @@ extension OpenId4VciConfiguration {
 			publicKey = try KeyController.generateECDHPublicKey(from: privateKey)
 		}
 		let publicKeyJWK = try ECPublicKey(publicKey: publicKey, additionalParameters: ["alg": jwsAlgorithm.name, "use": "sig", "kid": UUID().uuidString])
-		return DPoPConstructor(algorithm: jwsAlgorithm, jwk: publicKeyJWK, privateKey: privateKeyProxy, keyAttestation: keyAttestation)
+		return DPoPConstructor(algorithm: jwsAlgorithm, jwk: publicKeyJWK, privateKey: privateKeyProxy)
 	}
 }

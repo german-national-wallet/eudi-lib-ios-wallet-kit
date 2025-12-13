@@ -373,7 +373,7 @@ public actor OpenId4VCIService {
 		let pushedAuthorizationRequestEndpoint = if case let .oidc(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint { endpoint } else if case let .oauth(metaData) = offer.authorizationServerMetadata, let endpoint = metaData.pushedAuthorizationRequestEndpoint { endpoint } else { "" }
 		if config.usePAR && pushedAuthorizationRequestEndpoint.isEmpty { logger.info("PAR not supported, Pushed Authorization Request Endpoint is nil") }
 		logger.info("--> [AUTHORIZATION] Placing Request to AS server's endpoint \(pushedAuthorizationRequestEndpoint)")
-		let parPlaced = try await issuer.prepareAuthorizationRequest(credentialOffer: offer, clientAttestation: clientAttestation.wia, clientAttestationPoP: clientAttestation.wiaPop)
+		let parPlaced = try await issuer.prepareAuthorizationRequest(credentialOffer: offer)
 
 		if case let .success(request) = parPlaced, case let .prepared(authRequested) = request {
 			self.authRequested = authRequested
@@ -670,7 +670,7 @@ public actor OpenId4VCIService {
 		let pds = issueOutcome.pendingOrDeferredStatus
 		var batch: [WalletStorage.Document]?
 		var publicKeys: [Data] = []
-		var dkInfo = DocKeyInfo(secureAreaName: issueReq.secureAreaName, batchSize: 0, credentialPolicy: issueReq.credentialOptions.credentialPolicy)
+		var dkInfo = DocKeyInfo(secureAreaName: issueReq.secureAreaName, batchSize: 5, credentialPolicy: issueReq.credentialOptions.credentialPolicy)
 		switch issueOutcome {
 		case .issued(let dataPair, let cc):
 			guard dataPair.first != nil else { throw PresentationSession.makeError(str: "Empty issued data array") }
