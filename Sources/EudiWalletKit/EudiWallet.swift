@@ -83,13 +83,12 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	/// let wallet = try! EudiWallet(serviceName: "my_wallet_app", trustedReaderCertificates: [Data(name: "eudi_pid_issuer_ut", ext: "der")!])
 	/// ```
 	public init(storageService: (any DataStorageService)? = nil, serviceName: String? = nil, accessGroup: String? = nil, trustedReaderCertificates: [Data]? = nil, userAuthenticationRequired: Bool = true, openID4VpConfig: OpenId4VpConfiguration? = nil, openID4VciConfigurations: [String: OpenId4VciConfiguration]? = nil, networking: (any NetworkingProtocol)? = nil, logFileName: String? = nil, secureAreas: [any SecureArea]? = nil, transactionLogger: (any TransactionLogger)? = nil, modelFactory: (any DocClaimsDecodableFactory)? = nil) throws {
-
 		try Self.validateServiceParams(serviceName: serviceName)
 		self.serviceName = serviceName ?? Self.defaultServiceName
 		self.accessGroup = accessGroup
 		self.modelFactory = modelFactory
 		self.trustedReaderCertificates = trustedReaderCertificates
-		self.userAuthenticationRequired = userAuthenticationRequired
+		self.userAuthenticationRequired = false
 		#if DEBUG
 		self.userAuthenticationRequired = false
 		#endif
@@ -277,6 +276,8 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		}
 	}
 
+
+
 	/// Issue documents by offer URI.
 	/// - Parameters:
 	///   - offerUri: url with offer
@@ -285,7 +286,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	///   - promptMessage: prompt message for biometric authentication (optional)
 	///  - configuration: Optional OpenId4VciConfiguration to override the default one for this issuance
 	/// - Returns: Array of issued and stored documents
-	public func issueDocumentsByOfferUrl(offerUri: String, docTypes: [OfferedDocModel], txCodeValue: String? = nil, promptMessage: String? = nil, configuration: OpenId4VciConfiguration? = nil) async throws -> [WalletStorage.Document] {
+	public func issueDocumentsByOfferUrl(offerUri: String, docTypes: [OfferedDocModel], txCodeValue: String? = nil, promptMessage: String? = nil, configuration: OpenId4VciConfiguration? = nil, clientAttestation: ClientAttestation) async throws -> [WalletStorage.Document] {
 		let result = await CredentialOfferRequestResolver(fetcher: Fetcher<CredentialOfferRequestObject>(session: networkingVci), credentialIssuerMetadataResolver: OpenId4VCIService.makeMetadataResolver(networkingVci), authorizationServerMetadataResolver: AuthorizationServerMetadataResolver(oidcFetcher: Fetcher<OIDCProviderMetadata>(session: networkingVci), oauthFetcher: Fetcher<AuthorizationServerMetadata>(session: networkingVci))).resolve(source: try .init(urlString: offerUri), policy: .ignoreSigned)
 		switch result {
 		case .success(let offer):
@@ -319,6 +320,20 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	/// - Parameter issued: The issued document
 	public func endIssueDocument(_ issued: WalletStorage.Document, batch: [WalletStorage.Document]?) async throws {
 		try await storage.storageService.saveDocument(issued, batch: batch, allowOverwrite: true)
+	}
+
+	public func validateIssuedDocuments(_ issued: WalletStorage.Document, batch: [WalletStorage.Document]?, publicKeys: [Data]) async throws {
+		let pkCoseKeys = publicKeys.compactMap { try? CoseKey(data: [UInt8]($0)) }
+		guard pkCoseKeys.count == publicKeys.count else { throw PresentationSession.makeError(str: "Failed to parse public keys") }
+		for (index, doc) in (batch ?? [issued]).enumerated() {
+			do {
+				if doc.docDataFormat == .cbor {
+					let iss = try IssuerSigned(data: [UInt8](doc.data))
+					guard let docType = doc.docType else { throw PresentationSession.makeError(str: "Document type missing at index \(index)") }
+					try iss.validate(docType: docType)
+				}
+			}  catch let e as LocalizedError { throw PresentationSession.makeError(err: e) }
+		}
 	}
 
 	/// Load documents with a specific status from storage

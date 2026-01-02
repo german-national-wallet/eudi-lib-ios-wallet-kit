@@ -14,16 +14,12 @@ import SwiftyJSON
 
 extension EudiWallet {
 	@MainActor
-	@discardableResult public func issuePAR(docTypeIdentifier: DocTypeIdentifier, keyOptions: KeyOptions? = nil, promptMessage: String? = nil, dpopConstructorParam: IssuerDPoPConstructorParam, clientAttestation: ClientAttestation) async throws -> WalletStorage.Document? {
-		let usedKeyOptions = try await validateKeyOptions(docTypeIdentifier: docTypeIdentifier, keyOptions: keyOptions)
-		let openId4VCIService = try await prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: nil, keyOptions: usedKeyOptions, disablePrompt: false, promptMessage: promptMessage)
 
-		let (issuance, dataFormat) = try await openId4VCIService.issuePAR(docTypeIdentifier, promptMessage: promptMessage, dpopConstructorParam: dpopConstructorParam, clientAttestation: clientAttestation)
-		guard let issuance else {
-			return nil
+	@discardableResult public func issuePAR(issuerName: String, docTypeIdentifier: DocTypeIdentifier, credentialOptions: CredentialOptions?, keyOptions: KeyOptions? = nil, promptMessage: String? = nil) async throws -> WalletStorage.Document? {
+		guard let vciService = OpenId4VCIServiceRegistry.shared.get(name: issuerName) else {
+			throw WalletError(description: "No OpenId4VCI service registered for name \(issuerName)")
 		}
-
-		return try await finalizeIssuing(issueOutcome: issuance, docType: docTypeIdentifier.docType, format: dataFormat, issueReq: openId4VCIService.issueReq)
+		return try await vciService.issuePAR(docTypeIdentifier, credentialOptions: credentialOptions, promptMessage: promptMessage)
 	}
 
 	@MainActor

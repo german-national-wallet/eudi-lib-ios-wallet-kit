@@ -38,7 +38,7 @@ public struct OpenId4VciConfiguration: Sendable {
 		self.credentialIssuerURL = credentialIssuerURL
 		self.clientId = clientId ?? "wallet-dev"
 		self.keyAttestationsConfig = keyAttestationsConfig
-		self.authFlowRedirectionURI = authFlowRedirectionURI ?? URL(string: "eudi-openid4ci://authorize")!
+		self.authFlowRedirectionURI = authFlowRedirectionURI ?? URL(string: "https://redirect.localhost")!
 		self.authorizeIssuanceConfig = authorizeIssuanceConfig
 		self.usePAR = usePAR
 		self.useDpopIfSupported = useDpopIfSupported
@@ -137,7 +137,7 @@ extension OpenId4VciConfiguration {
 	///
 	/// - Parameter credentialIssuerId: The credential issuer identifier to hash
 	/// - Returns: A deterministic, stable key alias for the given issuer
-	private func generatePopKeyId(credentialIssuerId: String) -> String {
+	func generatePopKeyId(credentialIssuerId: String) -> String {
 		// Create a hash of the issuer ID to get a stable, URL-safe identifier
 		let data = Data(credentialIssuerId.utf8)
 		let hash = SHA256.hash(data: data)
