@@ -28,7 +28,8 @@ extension OpenId4VciConfiguration {
 			jwsAlgorithm = jwsAlg
 			let publicCoseKey: CoseKey = if let dpopKeyId, !dpopKeyId.hasSuffix("_dpop"), let keyInfo = try? await secureArea.getKeyBatchInfo(id: dpopKeyId), dpopKeyOptions.secureAreaName == keyInfo.secureAreaName, dpopKeyOptions.curve == ecCurve, keyInfo.usedCounts.count == 1, let pck = try? await secureArea.getPublicKey(id: dpopKeyId, index: 0, curve: ecCurve) { pck } else {
 				(try await secureArea.createKeyBatch(id: keyId, credentialOptions: CredentialOptions(credentialPolicy: .rotateUse, batchSize: 1), keyOptions: dpopKeyOptions)).first! }
-//			let unlockData = try await secureArea.unlockKey(id: keyId)
+			//MARK: unlockData is not needed for now, but may be needed in the future, commenting it for now, so that the function can stay closer to Niscy's implementation
+			//			let unlockData = try await secureArea.unlockKey(id: keyId)
 			let signer = try SecureAreaSigner(secureArea: secureArea, id: keyId, index: 0, ecAlgorithm: ecAlgorithm, unlockData: nil)
 			privateKeyProxy = .custom(signer)
 			publicKey = try publicCoseKey.toSecKey()

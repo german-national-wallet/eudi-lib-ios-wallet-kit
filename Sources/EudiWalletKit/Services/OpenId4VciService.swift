@@ -112,8 +112,8 @@ public actor OpenId4VCIService {
 		if funcKeyAttestationJWT == nil {
 			bindingKey = .jwt(algorithm: JWSAlgorithm(algType), jwk: publicKeyJWK, privateKey: .custom(signer), issuer: config.clientId)
 		} else {
+			//TODO: current Niscy implementation forces to use both client attestation and key attestion, but we have only client attestation, so commenting .jwtKeyAttestation and using .jwt here, will fix it when implementing key attestations: WD-2188
 			//bindingKey = try! .jwtKeyAttestation(algorithm: JWSAlgorithm(algType), keyAttestationJWT: funcKeyAttestationJWT!, keyIndex: UInt(index), privateKey: .custom(signer), issuer: config.clientId)
-			//TODO: use funcKeyAttestationJWT for creating bindingKey when implementing key attestations: WD-2188
 			bindingKey = .jwt(algorithm: JWSAlgorithm(algType), jwk: publicKeyJWK, privateKey: .custom(signer), issuer: config.clientId)
 //			bindingKey = .attestation(keyAttestationJWT: funcKeyAttestationJWT!)
 		}

@@ -75,12 +75,8 @@ extension OpenId4VCIService {
 
 		let authorized = try await issuer.authorizeWithAuthorizationCode(request: .authorizationCode(AuthorizationCodeRetrieved(credentials: [.init(value: model.configuration.configurationIdentifier.value)], authorizationCode: IssuanceAuthorization(authorizationCode: authorizationCode), pkceVerifier: pkceVerifier, configurationIds: [model.configuration.configurationIdentifier], dpopNonce: nil))).get()
 
-//		let authReqParams = convertAuthorizedRequestToParam(authorizedRequest: authorized)
-		
-		let (bindingKeys, publicKeys) = try await initSecurityKeys(algSupported: Set(model.configuration.credentialSigningAlgValuesSupported))
+		let (bindingKeys, publicKeys) = try await initSecurityKeys(model.configuration)
 
-//		let res = try await issueOfferedCredentialInternalValidated(authorized, offer: offer, issuer: issuer, configuration: model.configuration, claimSet: nil, algSupported: Set(model.configuration.algValuesSupported))
-//		Self.metadataCache.removeValue(forKey: model.metadataKey)
 		let res = try await submissionUseCase(authorized, issuer: issuer, configuration: model.configuration, bindingKeys: bindingKeys, publicKeys: publicKeys)
 		return (res, authorized)
 	}
@@ -140,7 +136,7 @@ extension OpenId4VCIService {
 		} catch {
 			throw WalletError(description: "Invalid issuer metadata")
 		}
-		return (nil, nil, nil)
+		throw WalletError(description: "Error with refreshing credentials")
 	}
 
 	private func fetchIssuerAndOfferWithLatestMetadata(docTypeIdentifier: DocTypeIdentifier, dpopConstructor: DPoPConstructorType) async throws -> (Issuer?, CredentialOffer?) {
@@ -157,7 +153,7 @@ extension OpenId4VCIService {
 
 			return (issuer, offer)
 		}
-		return (nil, nil)
+		throw WalletError(description: "Error with refreshing credentials")
 	}
 
 	private func authorizePARWithAuthCodeUseCase(issuer: Issuer, offer: CredentialOffer) async throws ->  AuthorizeRequestOutcome? {

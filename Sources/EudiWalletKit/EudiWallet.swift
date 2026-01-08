@@ -88,7 +88,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		self.accessGroup = accessGroup
 		self.modelFactory = modelFactory
 		self.trustedReaderCertificates = trustedReaderCertificates
-		self.userAuthenticationRequired = false
+		self.userAuthenticationRequired = userAuthenticationRequired
 		#if DEBUG
 		self.userAuthenticationRequired = false
 		#endif
