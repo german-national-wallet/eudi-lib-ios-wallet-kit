@@ -125,7 +125,7 @@ extension OpenId4VCIService {
 
 							return (issuanceOutcome, configuration.format, updatedAuthRequest)
 						} catch {
-							throw WalletError(description: "Invalid issuer metadata")
+							throw WalletError(description: error.localizedDescription)
 						}
 					}
 				case .failure(let error):
