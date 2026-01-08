@@ -11,6 +11,7 @@ import MdocDataModel18013
 import MdocSecurity18013
 
 extension OpenId4VciConfiguration {
+	//MARK: remove nonce and possibly whole function when key attestations are enabled, WD-2188
 	func makeDPoPConstructor(keyId dpopKeyId: String?, algorithms: [JWSAlgorithm]?, nonce: String?) async throws -> DPoPConstructorType? {
 		guard let algorithms = algorithms, !algorithms.isEmpty else { return nil }
 		let privateKeyProxy: SigningKeyProxy
@@ -18,7 +19,7 @@ extension OpenId4VciConfiguration {
 		let jwsAlgorithm: JWSAlgorithm
 		let jwk: any JWK
 		let keyId = dpopKeyId ?? UUID().uuidString
-		if var dpopKeyOptions {
+		if let dpopKeyOptions {
 			// If dpopKeyOptions is specified, use it to determine key generation parameters
 			let secureArea = SecureAreaRegistry.shared.get(name: dpopKeyOptions.secureAreaName)
 			let ecCurve = dpopKeyOptions.curve

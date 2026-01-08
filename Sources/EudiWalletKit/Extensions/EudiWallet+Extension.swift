@@ -36,6 +36,7 @@ extension EudiWallet {
 		return (res, authRequest)
 	}
 
+	//MARK: commenting for now but will be needed again for fixing refresh token, WD-1352
 	/*
 	 @MainActor
 	 public func getCredentials(with refreshToken: String, accessToken: String, docType: String?, identifier: String?, scope: String?, docTypeIdentifier: DocTypeIdentifier, keyOptions: KeyOptions? = nil, promptMessage: String? = nil, docDataFormat: DocDataFormat, issuerDPopConstructorParam: IssuerDPoPConstructorParam, batchCount: Int) async -> (WalletStorage.Document?, AuthorizedRequest?) {

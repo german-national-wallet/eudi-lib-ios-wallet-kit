@@ -13,7 +13,6 @@ import JOSESwift
 import WalletStorage
 
 extension OpenId4VCIService {
-
 	func issuePAR(_ docTypeIdentifier: DocTypeIdentifier, credentialOptions: CredentialOptions?, keyOptions: KeyOptions? = nil, promptMessage: String? = nil) async throws -> WalletStorage.Document? {
 		let usedKeyOptions = try await validateCredentialOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: credentialOptions)
 		try await prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: nil, credentialOptions: usedKeyOptions, keyOptions: keyOptions, disablePrompt: false, promptMessage: promptMessage)
@@ -134,7 +133,7 @@ extension OpenId4VCIService {
 				}
 			}
 		} catch {
-			throw WalletError(description: "Invalid issuer metadata")
+			throw WalletError(description: error.localizedDescription)
 		}
 		throw WalletError(description: "Error with refreshing credentials")
 	}
