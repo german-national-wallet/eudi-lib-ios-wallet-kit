@@ -186,6 +186,7 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 			await setError(error.localizedDescription)
 			let setErrorTransactionLog = presentationService.transactionLog.copy(status: .failed, errorMessage: error.localizedDescription)
 			if let transactionLogger { do { try await transactionLogger.log(transaction: setErrorTransactionLog) } catch { logger.error("Failed to log transaction") } }
+			throw error
 		}
 	}
 
