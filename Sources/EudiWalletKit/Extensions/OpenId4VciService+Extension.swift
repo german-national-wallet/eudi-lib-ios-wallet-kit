@@ -74,7 +74,7 @@ extension OpenId4VCIService {
 
 		let authorized = try await issuer.authorizeWithAuthorizationCode(request: .authorizationCode(AuthorizationCodeRetrieved(credentials: [.init(value: model.configuration.configurationIdentifier.value)], authorizationCode: IssuanceAuthorization(authorizationCode: authorizationCode), pkceVerifier: pkceVerifier, configurationIds: [model.configuration.configurationIdentifier], dpopNonce: nil))).get()
 
-		let (bindingKeys, publicKeys) = try await initSecurityKeys(model.configuration)
+		let (bindingKeys, publicKeys) = try await initSecurityKeys(model.configuration, nonce: nonce)
 
 		let res = try await submissionUseCase(authorized, issuer: issuer, configuration: model.configuration, bindingKeys: bindingKeys, publicKeys: publicKeys)
 		return res
@@ -84,9 +84,9 @@ extension OpenId4VCIService {
 	private func getIssuer(offer: CredentialOffer, nonce: String?) async throws -> Issuer {
 		var dpopConstructor: DPoPConstructorType? = nil
 		if config.useDpopIfSupported {
-			dpopConstructor = try await config.makeDPoPConstructor(keyId: issueReq.dpopKeyId, algorithms: offer.authorizationServerMetadata.dpopSigningAlgValuesSupported, nonce: nil)
+			dpopConstructor = try await config.makeDPoPConstructor(keyId: issueReq.dpopKeyId, algorithms: offer.authorizationServerMetadata.dpopSigningAlgValuesSupported)
 		}
-		let vciConfig = try await config.toOpenId4VCIConfigWithPrivateKey(credentialIssuerId: offer.credentialIssuerIdentifier.url.absoluteString, clientAttestationPopSigningAlgValuesSupported: offer.authorizationServerMetadata.clientAttestationPopSigningAlgValuesSupported)
+		let vciConfig = try await config.toOpenId4VCIConfigWithPrivateKey(credentialIssuerId: offer.credentialIssuerIdentifier.url.absoluteString, clientAttestationPopSigningAlgValuesSupported: offer.authorizationServerMetadata.clientAttestationPopSigningAlgValuesSupported, nonce: nonce)
 		return try Issuer(
 			authorizationServerMetadata: offer.authorizationServerMetadata,
 			issuerMetadata: offer.credentialIssuerMetadata,

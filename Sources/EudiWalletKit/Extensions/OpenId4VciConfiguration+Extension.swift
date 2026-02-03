@@ -12,14 +12,17 @@ import MdocSecurity18013
 
 extension OpenId4VciConfiguration {
 	//MARK: remove nonce and possibly whole function when key attestations are enabled, WD-2188
-	func makeDPoPConstructor(keyId dpopKeyId: String?, algorithms: [JWSAlgorithm]?, nonce: String?) async throws -> DPoPConstructorType? {
+	func makeDPoPConstructor(keyId dpopKeyId: String?, algorithms: [JWSAlgorithm]?, nonce: String?) async throws -> DPoPConstructor? {
 		guard let algorithms = algorithms, !algorithms.isEmpty else { return nil }
 		let privateKeyProxy: SigningKeyProxy
 		let publicKey: SecKey
 		let jwsAlgorithm: JWSAlgorithm
 		let jwk: any JWK
 		let keyId = dpopKeyId ?? UUID().uuidString
-		if let dpopKeyOptions {
+		if var dpopKeyOptions {
+			if let nonce {
+				dpopKeyOptions.additionalOptions = nonce.data(using: .utf8)
+			}
 			// If dpopKeyOptions is specified, use it to determine key generation parameters
 			let secureArea = SecureAreaRegistry.shared.get(name: dpopKeyOptions.secureAreaName)
 			let ecCurve = dpopKeyOptions.curve
@@ -34,6 +37,13 @@ extension OpenId4VciConfiguration {
 			let signer = try SecureAreaSigner(secureArea: secureArea, id: keyId, index: 0, ecAlgorithm: ecAlgorithm, unlockData: nil)
 			privateKeyProxy = .custom(signer)
 			publicKey = try publicCoseKey.toSecKey()
+
+			if let dpopKeyId {
+				await print("getKeyBatchInfo:",try secureArea.getKeyBatchInfo(id: dpopKeyId))
+				let keyBatchInfo = try await secureArea.getKeyBatchInfo(id: dpopKeyId)
+				let keyAttestation = keyBatchInfo.attestation?.attestation?.first
+				print(keyAttestation)
+			}
 		} else {
 			let setCommonJwsAlgorithmNames = Array(Set(algorithms.map(\.name)).intersection(Self.supportedDPoPAlgorithms.map(\.name))).sorted()
 			guard let algName = setCommonJwsAlgorithmNames.first else {
@@ -57,16 +67,16 @@ extension OpenId4VciConfiguration {
 	}
 
 	//MARK: Duplicate function(toOpenId4VCIConfig) to allow passing of private key for client attestation jwt creation
-	func toOpenId4VCIConfigWithPrivateKey(credentialIssuerId: String, clientAttestationPopSigningAlgValuesSupported: [JWSAlgorithm]?) async throws -> OpenId4VCIConfig {
-		let client: Client = if let keyAttestationsConfig, clientAttestationPopSigningAlgValuesSupported != nil { try await makeAttestationClientWithPrivateKey(config: keyAttestationsConfig, credentialIssuerId: credentialIssuerId, algorithms: clientAttestationPopSigningAlgValuesSupported) } else { .public(id: clientId) }
+	func toOpenId4VCIConfigWithPrivateKey(credentialIssuerId: String, clientAttestationPopSigningAlgValuesSupported: [JWSAlgorithm]?,  nonce: String?) async throws -> OpenId4VCIConfig {
+		let client: Client = if let keyAttestationsConfig, clientAttestationPopSigningAlgValuesSupported != nil { try await makeAttestationClientWithPrivateKey(config: keyAttestationsConfig, credentialIssuerId: credentialIssuerId, algorithms: clientAttestationPopSigningAlgValuesSupported, nonce: nonce) } else { .public(id: clientId) }
 		let clientAttestationPoPBuilder: ClientAttestationPoPBuilder? = if keyAttestationsConfig != nil { DefaultClientAttestationPoPBuilder() } else { nil}
 		return OpenId4VCIConfig(client: client, authFlowRedirectionURI: authFlowRedirectionURI, authorizeIssuanceConfig: authorizeIssuanceConfig, usePAR: usePAR, clientAttestationPoPBuilder: clientAttestationPoPBuilder, useDpopIfSupported: useDpopIfSupported)
 	}
 
 	//MARK: Duplicate function(makeAttestationClient) to allow passing of private key for client attestation jwt creation
-	private func makeAttestationClientWithPrivateKey(config: KeyAttestationConfig, credentialIssuerId: String, algorithms: [JWSAlgorithm]?) async throws -> Client {
+	private func makeAttestationClientWithPrivateKey(config: KeyAttestationConfig, credentialIssuerId: String, algorithms: [JWSAlgorithm]?, nonce: String?) async throws -> Client {
 		let keyId = generatePopKeyId(credentialIssuerId: credentialIssuerId)
-		guard let dpopConstructor = try await makeDPoPConstructor(keyId: keyId, algorithms: algorithms) else {	 throw WalletError(description: "Failed to create DPoP constructor for client attestation") }
+		guard let dpopConstructor = try await makeDPoPConstructor(keyId: keyId, algorithms: algorithms, nonce: nonce) else {	 throw WalletError(description: "Failed to create DPoP constructor for client attestation") }
 
 		guard case .secKey(let privateKey) = dpopConstructor.privateKey else {
 			throw WalletError(description: "Failed to get the private key for the custom signer")

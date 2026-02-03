@@ -34,5 +34,5 @@ public struct KeyAttestationConfig: Sendable {
 public protocol WalletAttestationsProvider: Sendable {
 	func getWalletAttestation(key: any JWK, privateKey: SecKey) async throws -> String
 	func getWalletAttestation(key: any JWK) async throws -> String
-	func getKeysAttestation(keys: [any JWK], nonce: String?) async throws -> String
+	func getKeysAttestation(keys: [any JWK], nonce: String?, keyID: String) async throws -> String
 }

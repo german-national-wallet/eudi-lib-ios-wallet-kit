@@ -70,7 +70,7 @@ public actor OpenId4VCIService {
 	}
 
 	// create batch keys and return the binding keys and the `CoseKey` public keys in cbor format
-	func initSecurityKeys(_ configuration: CredentialConfiguration) async throws -> ([BindingKey], [Data]) {
+	func initSecurityKeys(_ configuration: CredentialConfiguration, nonce: String? = nil) async throws -> ([BindingKey], [Data]) {
 		let algSupported = Set(configuration.credentialSigningAlgValuesSupported)
 		// Convert credential issuer supported algorithms to JWSAlgorithm types
 		let algTypes = algSupported.compactMap { JWSAlgorithm.AlgorithmType(rawValue: $0) }
@@ -82,12 +82,17 @@ public actor OpenId4VCIService {
 		guard let algType = Self.mapToJWSAlgorithmType(selectedAlgorithm) else {
 			throw PresentationSession.makeError(str: "Unsupported secure area signing algorithm: \(selectedAlgorithm)")
 		}
+		if let nonce {
+			issueReq.keyOptions = KeyOptions(additionalOptions: nonce.data(using: .utf8))
+		}
 		let publicCoseKeys = try await issueReq.createKeyBatch()
 		let publicKeys = try publicCoseKeys.map { try ECPublicKey(publicKey: try $0.toSecKey(), additionalParameters: ["alg": JWSAlgorithm(algType).name, "use": "sig", "kid": UUID().uuidString]) }
 		let unlockData = try await issueReq.secureArea.unlockKey(id: issueReq.id)
 		var funcKeyAttestationJWT: FuncKeyAttestationJWT? = nil
 		if config.keyAttestationsConfig != nil, configuration.supportsAttestationProofType {
-			funcKeyAttestationJWT = { nonce in try await self.getKeyAttestationJWT(publicKeys, nonce: nonce) }
+			funcKeyAttestationJWT = { nonce in
+				try await self.getKeyAttestationJWT(publicKeys, nonce: nonce)
+			}
 		} else if config.keyAttestationsConfig != nil, configuration.supportsJwtProofTypeWithAttestation {
 			throw PresentationSession.makeError(str: "JWT proof with attestation is not yet supported in wallet")
 		}
@@ -96,7 +101,7 @@ public actor OpenId4VCIService {
 	}
 
 	func getKeyAttestationJWT(_ publicKeys: [ECPublicKey], nonce: String?) async throws -> KeyAttestationJWT {
-		let jwt = try await self.config.keyAttestationsConfig!.walletAttestationsProvider.getKeysAttestation(keys: publicKeys, nonce: nonce!)
+		let jwt = try await self.config.keyAttestationsConfig!.walletAttestationsProvider.getKeysAttestation(keys: publicKeys, nonce: nonce!, keyID: issueReq.id)
 		let keyAttestationJwt: KeyAttestationJWT = try .init(jws: .init(compactSerialization: jwt))
 		return keyAttestationJwt
 	}
@@ -114,8 +119,8 @@ public actor OpenId4VCIService {
 		} else {
 			//TODO: current Niscy implementation forces to use both client attestation and key attestion, but we have only client attestation, so commenting .jwtKeyAttestation and using .jwt here, will fix it when implementing key attestations: WD-2188
 			//bindingKey = try! .jwtKeyAttestation(algorithm: JWSAlgorithm(algType), keyAttestationJWT: funcKeyAttestationJWT!, keyIndex: UInt(index), privateKey: .custom(signer), issuer: config.clientId)
-			bindingKey = .jwt(algorithm: JWSAlgorithm(algType), jwk: publicKeyJWK, privateKey: .custom(signer), issuer: config.clientId)
-//			bindingKey = .attestation(keyAttestationJWT: funcKeyAttestationJWT!)
+//			bindingKey = .jwt(algorithm: JWSAlgorithm(algType), jwk: publicKeyJWK, privateKey: .custom(signer), issuer: config.clientId)
+			bindingKey = .attestation(keyAttestationJWT: funcKeyAttestationJWT!)
 		}
 		return bindingKey
 	}
