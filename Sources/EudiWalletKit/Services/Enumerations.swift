@@ -32,14 +32,9 @@ public enum FlowType: Codable, Hashable, Sendable {
 	public var qrCode: Data? { if case let .openid4vp(qrCode) = self { qrCode} else { nil} }
 }
 
-public enum StorageType: Sendable {
-	case keyChain
-}
-
 extension SignedSDJWT: @retroactive @unchecked Sendable {}
 
 public enum DocTypedData: Sendable {
 	case msoMdoc(IssuerSigned)
 	case sdJwt(SignedSDJWT)
 }
-

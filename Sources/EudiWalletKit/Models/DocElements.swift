@@ -15,12 +15,14 @@ limitations under the License.
 */
 
 import Foundation
+import OrderedCollections
 import MdocDataModel18013
 import MdocDataTransfer18013
 import eudi_lib_sdjwt_swift
 
 public struct DocPresentInfo: Sendable {
 	public let docType: String
+	public let secureAreaName: String?
 	public let docDataFormat: DocDataFormat
 	public let displayName: String?
 	public let docClaims: [DocClaim]
@@ -128,7 +130,8 @@ public final class SdJwtElements: Identifiable, @unchecked Sendable {
 
 extension IssuerSigned {
 	public func extractMsoMdocElements(docId: String, docType: String, displayName: String?, docClaims: [DocClaim], itemsRequested: [NameSpace: [RequestItem]]) -> MsoMdocElements {
-		MsoMdocElements(docId: docId, docType: docType, displayName: displayName, nameSpacedElements: itemsRequested.compactMap { ns, requestItems in
+		let itemsReq = if itemsRequested.count > 0 { itemsRequested } else { Dictionary(grouping: docClaims, by: { $0.path.first! }).mapValues { $0.map { RequestItem(elementPath: Array($0.path.dropFirst())) } } }
+		return MsoMdocElements(docId: docId, docType: docType, displayName: displayName, nameSpacedElements: itemsReq.compactMap { ns, requestItems in
 			extractNameSpacedElements(docType: docType, ns: ns, docClaims: docClaims, requestItems: requestItems)
 		})
 	}
@@ -143,9 +146,10 @@ extension IssuerSigned {
 
 extension SignedSDJWT {
 	public func extractSdJwtElements(docId: String, vct: String, displayName: String?, docClaims: [DocClaim], itemsRequested: [NameSpace: [RequestItem]]) -> SdJwtElements? {
-		guard let allPaths = try? disclosedPaths() else { return nil }
+		guard let allPathsDict = (try? recreateClaims())?.disclosuresPerClaimPath else { return nil }
+		let allPaths = OrderedSet(allPathsDict.keys).union(docClaims.flatMap(\.claimPaths))
 		let isMandatory: (RequestItem) -> Bool = { if let o = $0.isOptional { !o } else { false } }
-		guard let itemsReq = itemsRequested[""] else { return nil }
+		let itemsReq = itemsRequested[""] ?? allPaths.map { RequestItem(elementPath: $0.value.map(\.claimName)) }
 		var sdJwtArray = [SdJwtElement]()
 		let tmp = itemsReq.map { reqItem in reqItem.extractSdJwtElement(allPaths: allPaths, docClaims: docClaims, isMandatory: isMandatory(reqItem), bRootOnly: true) }
 		for d in tmp { if !sdJwtArray.contains(d) { sdJwtArray.append(d) } }
@@ -159,21 +163,34 @@ extension SignedSDJWT {
 	}
 }
 
+extension eudi_lib_sdjwt_swift.ClaimPathElement {
+	public var claimName: String {
+		if case .claim(let name) = self { name } else if case .arrayElement(let index) = self { String(index) } else { "" }
+	}
+}
+
 extension RequestItem {
+
+	public var claimPath: ClaimPath {
+		ClaimPath(elementPath.map { if let index = Int($0) { ClaimPathElement.arrayElement(index: index) } else if $0.isEmpty { ClaimPathElement.allArrayElements } else { ClaimPathElement.claim(name: $0) } })
+	}
+
 	public func extractMsoMdocElement(ns: String, nsItems: [IssuerSignedItem], docClaims: [DocClaim], isMandatory: Bool) -> MsoMdocElement {
 		let issuedElement = nsItems.first { $0.elementIdentifier == rootIdentifier }
 		let stringValue = issuedElement?.description
 		let docClaim = docClaims.first { $0.namespace == ns && $0.name == rootIdentifier }
-		return MsoMdocElement(elementIdentifier: elementIdentifier, displayName: rootDisplayName ?? docClaim?.displayName ?? rootIdentifier, isOptional: !isMandatory, intentToRetain: intentToRetain ?? false, stringValue: stringValue, docClaim: docClaim, isValid: issuedElement != nil)
+		return MsoMdocElement(elementIdentifier: elementIdentifier, isOptional: !isMandatory, intentToRetain: intentToRetain ?? false, stringValue: stringValue, docClaim: docClaim, isValid: issuedElement != nil)
 	}
 
-	public func extractSdJwtElement(allPaths: [JSONPointer], docClaims: [DocClaim], isMandatory: Bool, bRootOnly: Bool) -> SdJwtElement {
-		let query = allPaths.first { elementPath == $0.tokenArray }
+	public func extractSdJwtElement(allPaths: OrderedSet<ClaimPath>, docClaims: [DocClaim], isMandatory: Bool, bRootOnly: Bool) -> SdJwtElement {
+		// find path that the request item contains it
+		let requestClaimPath = claimPath
+		let query = allPaths.first { path in path == requestClaimPath } ?? allPaths.first { path in requestClaimPath.contains2(path) }
 		let isValid = query != nil
 		let requestPath = bRootOnly ? [rootIdentifier] : elementPath
 		let docClaim: DocClaim? = findDocClaimByPath(docClaims: docClaims, requestPath: requestPath)
 		let stringValue: String? = docClaim?.stringValue
-		return SdJwtElement(elementPath: requestPath, displayNames: displayNames, isOptional: !isMandatory, intentToRetain: intentToRetain ?? false, stringValue: stringValue, docClaim: docClaim, isValid: isValid, nestedElements: nil)
+		return SdJwtElement(elementPath: requestPath, isOptional: !isMandatory, intentToRetain: intentToRetain ?? false, stringValue: stringValue, docClaim: docClaim, isValid: isValid, nestedElements: nil)
 	}
 
 	public func findDocClaimByPath(docClaims: [DocClaim], requestPath: [String]) -> DocClaim? {
@@ -211,6 +228,9 @@ extension Array where Element == DocElements {
 	public var items: RequestItems { Dictionary(grouping: self, by: \.docId).mapValues { $0.first!.selectedItemsDictionary } }
 }
 
+extension ClaimPath {
+ 	public func contains2(_ that: ClaimPath) -> Bool { zip(self.value, that.value).allSatisfy { (selfElement, thatElement) in selfElement.contains(thatElement) } }
+}
 
 public final class NameSpacedElements: Identifiable, @unchecked Sendable {
 	public init(nameSpace: String, elements: [MsoMdocElement]) {
@@ -223,9 +243,8 @@ public final class NameSpacedElements: Identifiable, @unchecked Sendable {
 }
 
 public final class MsoMdocElement: Identifiable, ObservableObject, @unchecked Sendable {
-	public init(elementIdentifier: String, displayName: String, isOptional: Bool, intentToRetain: Bool = false, stringValue: String?, docClaim: DocClaim?, isValid: Bool, isSelected: Bool = true) {
+	public init(elementIdentifier: String, isOptional: Bool, intentToRetain: Bool = false, stringValue: String?, docClaim: DocClaim?, isValid: Bool, isSelected: Bool = true) {
 		self.elementIdentifier = elementIdentifier
-		self.displayName = displayName
 		self.isOptional = isOptional
 		self.intentToRetain = intentToRetain
 		self.stringValue = stringValue
@@ -237,8 +256,6 @@ public final class MsoMdocElement: Identifiable, ObservableObject, @unchecked Se
 	public var id: String { elementIdentifier }
 	/// path to locate the element
 	public let elementIdentifier: String
-	// display names of the component paths
-	public let displayName: String
 	public let isOptional: Bool
 	public var intentToRetain: Bool = false
 	public let stringValue: String?
@@ -248,14 +265,13 @@ public final class MsoMdocElement: Identifiable, ObservableObject, @unchecked Se
 	public var isValidAndSelected: Bool { isValid && isSelected }
 
 	public var requestItem: RequestItem {
-		RequestItem(elementPath: [elementIdentifier], displayNames: [displayName], intentToRetain: intentToRetain, isOptional: isOptional)
+		RequestItem(elementPath: [elementIdentifier], intentToRetain: intentToRetain, isOptional: isOptional)
 	}
 }
 
 public final class SdJwtElement: Identifiable, ObservableObject, @unchecked Sendable, Hashable {
-	public init(elementPath: [String], displayNames: [String?], isOptional: Bool, intentToRetain: Bool = false, stringValue: String?, docClaim: DocClaim?, isValid: Bool, isSelected: Bool = true, nestedElements: [SdJwtElement]? = nil) {
+	public init(elementPath: [String], isOptional: Bool, intentToRetain: Bool = false, stringValue: String?, docClaim: DocClaim?, isValid: Bool, isSelected: Bool = true, nestedElements: [SdJwtElement]? = nil) {
 		self.elementPath = elementPath
-		self.displayNames = displayNames
 		self.isOptional = isOptional
 		self.intentToRetain = intentToRetain
 		self.stringValue = stringValue
@@ -268,8 +284,6 @@ public final class SdJwtElement: Identifiable, ObservableObject, @unchecked Send
 	public var id: String { elementPath.joined(separator: ".") }
 	/// path to locate the element
 	public let elementPath: [String]
-	// display names of the component paths
-	public let displayNames: [String?]
 	public let isOptional: Bool
 	public let intentToRetain: Bool
 	public let stringValue: String?
@@ -280,7 +294,7 @@ public final class SdJwtElement: Identifiable, ObservableObject, @unchecked Send
 	public var nestedElements: [SdJwtElement]?
 
 	public var requestItem: RequestItem {
-		RequestItem(elementPath: elementPath, displayNames: displayNames, intentToRetain: intentToRetain, isOptional: isOptional)
+		RequestItem(elementPath: elementPath, intentToRetain: intentToRetain, isOptional: isOptional)
 	}
 	public var selectedRequestItems: [RequestItem] {
 		[requestItem] + (nestedElements?.filter(\.isValidAndSelected).flatMap(\.selectedRequestItems) ?? [])
