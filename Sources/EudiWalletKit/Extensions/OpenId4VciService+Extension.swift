@@ -60,14 +60,14 @@ extension OpenId4VCIService {
 	private func resumePendingIssuance(pendingDoc: WalletStorage.Document, authorizationCode: String, nonce: String?) async throws -> IssuanceOutcome {
 		let model = try JSONDecoder().decode(PendingIssuanceModel.self, from: pendingDoc.data)
 		guard case .presentation_request_url(_) = model.pendingReason else { throw WalletError(description: "Unknown pending reason: \(model.pendingReason)") }
-		
+
 		if Self.credentialOfferCache[model.metadataKey] == nil {
 			if let cachedOffer = Self.credentialOfferCache.values.first {
 				Self.credentialOfferCache[model.metadataKey] = cachedOffer
 			}
 		}
 		guard let offer = Self.credentialOfferCache[model.metadataKey] else { throw WalletError(description: "Pending issuance cannot be completed") }
-		let issuer = try getIssuer(offer: offer)
+		let issuer = try await getIssuer(offer: offer, nonce: nonce)
 		logger.info("Starting issuing with identifer \(model.configuration.configurationIdentifier.value)")
 
 		let pkceVerifier = try PKCEVerifier(codeVerifier: model.pckeCodeVerifier, codeVerifierMethod: model.pckeCodeVerifierMethod)
@@ -77,7 +77,7 @@ extension OpenId4VCIService {
 		let (bindingKeys, publicKeys) = try await initSecurityKeys(model.configuration)
 
 		let res = try await submissionUseCase(authorized, issuer: issuer, configuration: model.configuration, bindingKeys: bindingKeys, publicKeys: publicKeys)
-		return (res, authorized)
+		return res
 	}
 
 	//MARK: remove nonce: nil to enable key attestation
@@ -109,17 +109,23 @@ extension OpenId4VCIService {
 
 			let issuerInfo = try await fetchIssuerAndOfferWithLatestMetadata(docTypeIdentifier: docTypeIdentifier, dpopConstructor: dpopConstructor)
 			if let issuer = issuerInfo.0, let offer = issuerInfo.1 {
-				
-				let result = await issuer.refresh(clientId: config.client.id, authorizedRequest: authorizedRequest)
+
+				let result = await issuer.refresh(clientId: config.clientId, authorizedRequest: authorizedRequest)
 				switch result {
 				case .success(let authReq):
 					let updatedAuthRequest = authReq
 
 					if offer.credentialConfigurationIdentifiers.first != nil {
 						do {
-							let configuration = try getCredentialConfiguration(credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: metaData.display, credentialsSupported: metaData.credentialsSupported, identifier: docTypeIdentifier.configurationIdentifier, docType: docTypeIdentifier.docType, vct: docTypeIdentifier.vct, batchCredentialIssuance: metaData.batchCredentialIssuance)
+							guard let authorizationServer = metaData.authorizationServers?.first else {
+								throw WalletError(description: "Invalid issuer metadata")
+							}
+							let authServerMetadata = await AuthorizationServerMetadataResolver(oidcFetcher: Fetcher<OIDCProviderMetadata>(session: networking), oauthFetcher: Fetcher<AuthorizationServerMetadata>(session: networking)).resolve(url: authorizationServer)
+							let authorizationServerMetadata = try authServerMetadata.get()
 
-							let (bindingKeys, publicKeys) = try await initSecurityKeys(algSupported: Set(configuration.credentialSigningAlgValuesSupported))
+							let configuration = try getCredentialConfiguration(credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: metaData.display, credentialsSupported: metaData.credentialsSupported, identifier: docTypeIdentifier.configurationIdentifier, docType: docTypeIdentifier.docType, vct: docTypeIdentifier.vct, batchCredentialIssuance: metaData.batchCredentialIssuance, dpopSigningAlgValuesSupported: authorizationServerMetadata.dpopSigningAlgValuesSupported?.map(\.name), clientAttestationPopSigningAlgValuesSupported: authorizationServerMetadata.clientAttestationPopSigningAlgValuesSupported?.map(\.name))
+
+							let (bindingKeys, publicKeys) = try await initSecurityKeys(configuration)
 
 							let issuanceOutcome = try await submissionUseCase(authorizedRequest, issuer: issuer, configuration: configuration, bindingKeys: bindingKeys, publicKeys: publicKeys)
 
@@ -129,7 +135,7 @@ extension OpenId4VCIService {
 						}
 					}
 				case .failure(let error):
-					throw WalletError(description: "Invalid issuer metadata")
+					throw WalletError(description: "Invalid issuer metadata: \(error)")
 				}
 			}
 		} catch {
@@ -143,12 +149,12 @@ extension OpenId4VCIService {
 
 		if let authorizationServer = metaData.authorizationServers?.first {
 			let authServerMetadata = await AuthorizationServerMetadataResolver(oidcFetcher: Fetcher(session: networking), oauthFetcher: Fetcher(session: networking)).resolve(url: authorizationServer)
-
-			let configuration = try getCredentialConfiguration(credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: metaData.display, credentialsSupported: metaData.credentialsSupported, identifier: docTypeIdentifier.configurationIdentifier, docType: docTypeIdentifier.docType, vct: docTypeIdentifier.vct, batchCredentialIssuance: metaData.batchCredentialIssuance)
+			let authorizationServerMetadata = try authServerMetadata.get()
+			let configuration = try getCredentialConfiguration(credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: metaData.display, credentialsSupported: metaData.credentialsSupported, identifier: docTypeIdentifier.configurationIdentifier, docType: docTypeIdentifier.docType, vct: docTypeIdentifier.vct, batchCredentialIssuance: metaData.batchCredentialIssuance, dpopSigningAlgValuesSupported: authorizationServerMetadata.dpopSigningAlgValuesSupported?.map(\.name), clientAttestationPopSigningAlgValuesSupported: authorizationServerMetadata.clientAttestationPopSigningAlgValuesSupported?.map(\.name))
 
 			let offer = try CredentialOffer(credentialIssuerIdentifier: credentialIssuerIdentifier, credentialIssuerMetadata: metaData, credentialConfigurationIdentifiers: [configuration.configurationIdentifier], grants: nil, authorizationServerMetadata: try authServerMetadata.get())
 
-			let issuer = try getIssuer(offer: offer)
+			let issuer = try await getIssuer(offer: offer)
 
 			return (issuer, offer)
 		}
@@ -166,6 +172,7 @@ extension OpenId4VCIService {
 			logger.info("--> [AUTHORIZATION] Placed PAR. Get authorization code URL is: \(pushedAuthorizationRequestEndpoint)")
 
 			return .presentation_request(authRequested.authorizationCodeURL.url)
+
 		} else if case let .failure(failure) = parPlaced {
 			throw WalletError(description: "Authorization error: \(failure.localizedDescription)")
 		}
@@ -173,14 +180,14 @@ extension OpenId4VCIService {
 	}
 }
 
-public struct IssuerDPoPConstructorParam {
+public struct IssuerDPoPConstructorParam: @unchecked Sendable {
 	let clientID: String?
 	let expirationDuration: TimeInterval?
 	let aud: String?
 	let jti: String?
 	let jwk: JWK
 	let privateKey: SecKey
-	
+
 	public init(clientID: String?, expirationDuration: TimeInterval?, aud: String?, jti: String?, jwk: JWK, privateKey: SecKey) {
 		self.clientID = clientID
 		self.expirationDuration = expirationDuration
@@ -197,7 +204,7 @@ public struct AuthorizedRequestParams: Sendable {
 	public let cNonce: String?
 	public let timeStamp: TimeInterval
 	public let dPopNonce: Nonce?
-	
+
 	public init(accessToken: String, refreshToken: String?, cNonce: String?, timeStamp: TimeInterval, dPopNonce: Nonce?) {
 		self.accessToken = accessToken
 		self.refreshToken = refreshToken

@@ -183,12 +183,9 @@ extension Array where Element == DocClaimMetadata {
 }
 
 extension CredentialConfiguration {
-	func convertToDocMetadata(docId: String) -> DocMetadata {
-		let namespacedClaims = msoClaims?.mapValues { (claims: [String: Claim]) in
-			claims.mapValues(\.metadata)
-		}
-		let flatClaims = flatClaims?.mapValues(\.metadata)
-		return DocMetadata(docId: docId, credentialIssuerIdentifier: credentialIssuerIdentifier, configurationIdentifier: configurationIdentifier.value, docType: docType, display: display, issuerDisplay: issuerDisplay, namespacedClaims: namespacedClaims, flatClaims: flatClaims)
+	func convertToDocMetadata() -> DocMetadata {
+		let claimMetadata = claims.map(\.metadata)
+		return DocMetadata(credentialIssuerIdentifier: credentialIssuerIdentifier, configurationIdentifier: configurationIdentifier.value, docType: docType, display: display, issuerDisplay: issuerDisplay, claims: claimMetadata)
 	}
 }
 

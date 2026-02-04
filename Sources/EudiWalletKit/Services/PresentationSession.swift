@@ -142,11 +142,10 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 	/// On success ``disclosedDocuments`` published variable will be set  and ``status`` will be ``.requestReceived``
 	/// On error ``uiError`` will be filled and ``status`` will be ``.error``
 	/// - Returns: A request object
-	public func receiveRequest() async -> (UserRequestInfo?, RelyingPartyInfo?) {
+	public func receiveRequest() async -> UserRequestInfo? {
 		do {
 			let request = try await presentationService.receiveRequest()
-			relyingPartyInfo = request.1
-			try await decodeRequest(request.0)
+			try await decodeRequest(request)
 			return request
 		} catch {
 			await setError(error.localizedDescription)

@@ -112,7 +112,7 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 	///  Receive request from an openid4vp URL
 	///
 	/// - Returns: The requested items.
-	public func receiveRequest() async throws -> (UserRequestInfo, RelyingPartyInfo?) {
+	public func receiveRequest() async throws -> UserRequestInfo {
 		guard status != .error, let openid4VPURI = URL(string: openid4VPlink) else { throw PresentationSession.makeError(str: "Invalid link \(openid4VPlink)") }
 		openId4Vp = OpenID4VP(walletConfiguration: getWalletConf())
 		switch await openId4Vp.authorize(url: openid4VPURI)  {
@@ -350,21 +350,6 @@ public final class OpenId4VpService: @unchecked Sendable, PresentationService {
 		}
 		let res = OpenId4VPConfiguration(privateKey: privateKey, publicWebKeySet: keySet, supportedClientIdSchemes: supportedClientIdPrefixes, vpFormatsSupported: [], jarConfiguration: .encryptionOption, vpConfiguration: .default(), errorDispatchPolicy: .allClients, session: networking, responseEncryptionConfiguration: openID4VpConfig.responseEncryptionConfiguration ?? .default())
 		return res
-	}
-
-	private func getRelyingPartyInfo(cer: Certificate) -> RelyingPartyInfo {
-		let subject = cer.subject.description.split(separator: ",")
-			.map{ $0.split(separator: "=") }
-			.reduce(into: [String: String]()) { dict, pair in
-				let key = String(pair[0]).trimmingCharacters(in: .whitespaces)
-				let value = String(pair[1]).trimmingCharacters(in: .whitespaces)
-				dict[key] = value
-			}
-		let commonName = subject["CN"] ?? ""
-		let country = subject["C"]
-		let issuerName = presentationDefinition?.name ?? commonName
-		
-		return RelyingPartyInfo(version: cer.version.description, issuer: issuerName, validFrom: cer.notValidBefore, validTo: cer.notValidAfter, serialNumber: cer.serialNumber.description, signatureAlgorithm: cer.signatureAlgorithm.description, country: country ?? "")
 	}
 }
 

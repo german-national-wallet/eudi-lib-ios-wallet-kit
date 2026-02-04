@@ -14,7 +14,6 @@ import SwiftyJSON
 
 extension EudiWallet {
 	@MainActor
-
 	@discardableResult public func issuePAR(issuerName: String, docTypeIdentifier: DocTypeIdentifier, credentialOptions: CredentialOptions?, keyOptions: KeyOptions? = nil, promptMessage: String? = nil) async throws -> WalletStorage.Document? {
 		guard let vciService = OpenId4VCIServiceRegistry.shared.get(name: issuerName) else {
 			throw WalletError(description: "No OpenId4VCI service registered for name \(issuerName)")
@@ -23,17 +22,11 @@ extension EudiWallet {
 	}
 
 	@MainActor
-	@discardableResult public func resumePendingIssuanceDocuments(pendingDoc: WalletStorage.Document, authorizationCode: String, keyOptions: KeyOptions? = nil) async throws -> (WalletStorage.Document?, AuthorizedRequest?) {
-
-		guard pendingDoc.status == .pending, let docTypeIdentifier = pendingDoc.docTypeIdentifier else {
-			throw PresentationSession.makeError(str: "Invalid document status for pending issuance: \(pendingDoc.status)")
+	@discardableResult public func resumePendingIssuanceDocuments(issuerName: String, pendingDoc: WalletStorage.Document, authorizationCode: String, nonce: String?, credentialOptions: CredentialOptions, keyOptions: KeyOptions? = nil) async throws -> WalletStorage.Document? {
+		guard let vciService = OpenId4VCIServiceRegistry.shared.get(name: issuerName) else {
+			throw WalletError(description: "No OpenId4VCI service registered for name \(issuerName)")
 		}
-		let usedKeyOptions = try await validateKeyOptions(docTypeIdentifier: docTypeIdentifier, keyOptions: keyOptions)
-		let openId4VCIService = try await prepareIssuing(id: pendingDoc.id, docTypeIdentifier: docTypeIdentifier, displayName: nil, keyOptions: usedKeyOptions, disablePrompt: true, promptMessage: nil)
-		let (outcome, authRequest) = try await openId4VCIService.resumePendingIssuance(pendingDoc: pendingDoc, authorizationCode: authorizationCode)
-		if case .pending(_) = outcome { return (pendingDoc, nil) }
-		let res = try await finalizeIssuing(issueOutcome: outcome, docType: pendingDoc.docType, format: pendingDoc.docDataFormat, issueReq: openId4VCIService.issueReq)
-		return (res, authRequest)
+		return try await vciService.resumePendingIssuance(pendingDoc: pendingDoc, credentialOptions: credentialOptions, keyOptions: keyOptions, authorizationCode: authorizationCode, nonce: nonce)
 	}
 
 	//MARK: commenting for now but will be needed again for fixing refresh token, WD-1352
@@ -76,7 +69,6 @@ extension EudiWallet {
 
 	 private func prepareIssuingService(id: String, docType: String?, displayName: String?, keyOptions: KeyOptions?, promptMessage: String? = nil) async throws -> (IssueRequest, OpenId4VCIService) {
 	 guard let openID4VciIssuerUrl else { throw WalletError(description: "issuer Url not defined")}
-
 
 	 let issueReq = try await Self.authorizedAction(action: {
 	 return try await beginIssueDocument(id: id, keyOptions: keyOptions)
