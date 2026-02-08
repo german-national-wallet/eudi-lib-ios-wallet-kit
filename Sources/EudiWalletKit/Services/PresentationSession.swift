@@ -75,7 +75,7 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 		disclosedDocuments = [DocElements]()
 		for (docId, docPresentInfo) in docIdToPresentInfo {
 			let docType = docPresentInfo.docType
-			let requestFormat = request.docDataFormats[docId] ?? request.docDataFormats[docType]  ?? request.docDataFormats.first(where: { Openid4VpUtils.vctToDocTypeMatch($0.key, docType)})?.value
+			let requestFormat = request.docDataFormats[docId] ?? request.docDataFormats[docType]  ?? request.docDataFormats.first(where: { OpenId4VpUtils.vctToDocTypeMatch($0.key, docType)})?.value
 			if requestFormat != docPresentInfo.docDataFormat  { continue }
 			switch requestFormat {
 				case .cbor:

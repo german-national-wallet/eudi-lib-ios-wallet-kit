@@ -138,7 +138,7 @@ extension OpenId4VciConfiguration {
 	///
 	/// - Parameter credentialIssuerId: The credential issuer identifier to hash
 	/// - Returns: A deterministic, stable key alias for the given issuer
-	private func generatePopKeyId(credentialIssuerId: String) -> String {
+	public func generatePopKeyId(credentialIssuerId: String) -> String {
 		// Create a hash of the issuer ID to get a stable, URL-safe identifier
 		let data = Data(credentialIssuerId.utf8)
 		let hash = SHA256.hash(data: data)
