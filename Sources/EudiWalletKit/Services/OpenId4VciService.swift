@@ -70,8 +70,7 @@ public actor OpenId4VCIService {
 	}
 
 	// create batch keys and return the binding keys and the `CoseKey` public keys in cbor format
-	func initSecurityKeys(_ configuration: CredentialConfiguration) async throws -> ([BindingKey], [Data]) {
-		let algSupported = Set(configuration.credentialSigningAlgValuesSupported)
+	func initSecurityKeys(algSupported: Set<String>) async throws -> ([BindingKey], [Data]) {
 		// Convert credential issuer supported algorithms to JWSAlgorithm types
 		let algTypes = algSupported.compactMap { JWSAlgorithm.AlgorithmType(rawValue: $0) }
 		guard !algTypes.isEmpty else {
@@ -86,15 +85,13 @@ public actor OpenId4VCIService {
 		let publicKeys = try publicCoseKeys.map { try ECPublicKey(publicKey: try $0.toSecKey(), additionalParameters: ["alg": JWSAlgorithm(algType).name, "use": "sig", "kid": UUID().uuidString]) }
 		let unlockData = try await issueReq.secureArea.unlockKey(id: issueReq.id)
 		var funcKeyAttestationJWT: FuncKeyAttestationJWT? = nil
-		if config.keyAttestationsConfig != nil, configuration.supportsAttestationProofType {
+		if config.keyAttestationsConfig != nil {
 			funcKeyAttestationJWT = { nonce in try await self.getKeyAttestationJWT(publicKeys, nonce: nonce) }
-		} else if config.keyAttestationsConfig != nil, configuration.supportsJwtProofTypeWithAttestation {
-			throw PresentationSession.makeError(str: "JWT proof with attestation is not yet supported in wallet")
 		}
 		let bindingKeys = try publicKeys.enumerated().map { try createBindingKey($0.element, secureAreaSigningAlg: selectedAlgorithm, unlockData: unlockData, index: $0.offset, funcKeyAttestationJWT: funcKeyAttestationJWT) }
 		return (bindingKeys, publicCoseKeys.map { Data($0.toCBOR(options: CBOROptions()).encode()) })
 	}
-
+	
 	func getKeyAttestationJWT(_ publicKeys: [ECPublicKey], nonce: String?) async throws -> KeyAttestationJWT {
 		let jwt = try await self.config.keyAttestationsConfig!.walletAttestationsProvider.getKeysAttestation(keys: publicKeys, nonce: nonce!)
 		let keyAttestationJwt: KeyAttestationJWT = try .init(jws: .init(compactSerialization: jwt))
@@ -112,10 +109,8 @@ public actor OpenId4VCIService {
 		if funcKeyAttestationJWT == nil {
 			bindingKey = .jwt(algorithm: JWSAlgorithm(algType), jwk: publicKeyJWK, privateKey: .custom(signer), issuer: config.clientId)
 		} else {
-			//TODO: current Niscy implementation forces to use both client attestation and key attestion, but we have only client attestation, so commenting .jwtKeyAttestation and using .jwt here, will fix it when implementing key attestations: WD-2188
-			//bindingKey = try! .jwtKeyAttestation(algorithm: JWSAlgorithm(algType), keyAttestationJWT: funcKeyAttestationJWT!, keyIndex: UInt(index), privateKey: .custom(signer), issuer: config.clientId)
 			bindingKey = .jwt(algorithm: JWSAlgorithm(algType), jwk: publicKeyJWK, privateKey: .custom(signer), issuer: config.clientId)
-//			bindingKey = .attestation(keyAttestationJWT: funcKeyAttestationJWT!)
+//			bindingKey = try! .jwtKeyAttestation(algorithm: JWSAlgorithm(algType), keyAttestationJWT: funcKeyAttestationJWT!, keyIndex: UInt(index), privateKey: .custom(signer), issuer: config.clientId)
 		}
 		return bindingKey
 	}
@@ -192,7 +187,7 @@ public actor OpenId4VCIService {
 	func getIssuer(offer: CredentialOffer) async throws -> Issuer {
 		var dpopConstructor: DPoPConstructorType? = nil
 		if config.useDpopIfSupported {
-			dpopConstructor = try await config.makeDPoPConstructor(keyId: issueReq.dpopKeyId, algorithms: offer.authorizationServerMetadata.dpopSigningAlgValuesSupported)
+			dpopConstructor = try await config.makePoPConstructor(popUsage: .dpop, privateKeyId: issueReq.dpopKeyId, algorithms: offer.authorizationServerMetadata.dpopSigningAlgValuesSupported, keyOptions: config.dpopKeyOptions)
 		}
 		let vciConfig = try await config.toOpenId4VCIConfig(credentialIssuerId: offer.credentialIssuerIdentifier.url.absoluteString, clientAttestationPopSigningAlgValuesSupported: offer.authorizationServerMetadata.clientAttestationPopSigningAlgValuesSupported)
 		return try Issuer(authorizationServerMetadata: offer.authorizationServerMetadata, issuerMetadata: offer.credentialIssuerMetadata, config: vciConfig, parPoster: Poster(session: networking), tokenPoster: Poster(session: networking), requesterPoster: Poster(session: networking), deferredRequesterPoster: Poster(session: networking), notificationPoster: Poster(session: networking), noncePoster: Poster(session: networking), dpopConstructor: dpopConstructor)
@@ -246,6 +241,7 @@ public actor OpenId4VCIService {
 		do {
 			let id = configuration.configurationIdentifier.value; let sc = configuration.scope; let dn = configuration.display.getName(uiCulture) ?? ""
 			logger.info("Starting issuing with identifer \(id), scope \(sc ?? ""), displayName: \(dn)")
+			//let issuer = try getIssuer(offer: offer)
 			let res = try await submissionUseCase(authorized, issuer: issuer, configuration: configuration, bindingKeys: bindingKeys, publicKeys: publicKeys)
 			// logger.info("Credential str:\n\(str)")
 			return res
@@ -317,7 +313,7 @@ public actor OpenId4VCIService {
 			let authServerMetadata = await AuthorizationServerMetadataResolver(oidcFetcher: Fetcher<OIDCProviderMetadata>(session: networking), oauthFetcher: Fetcher<AuthorizationServerMetadata>(session: networking)).resolve(url: authorizationServer)
 			let authorizationServerMetadata = try authServerMetadata.get()
 			let configuration = try getCredentialConfiguration(credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: metaData.display, credentialsSupported: metaData.credentialsSupported, identifier: docTypeIdentifier.configurationIdentifier, docType: docTypeIdentifier.docType, vct: docTypeIdentifier.vct, batchCredentialIssuance: metaData.batchCredentialIssuance, dpopSigningAlgValuesSupported: authorizationServerMetadata.dpopSigningAlgValuesSupported?.map(\.name), clientAttestationPopSigningAlgValuesSupported: authorizationServerMetadata.clientAttestationPopSigningAlgValuesSupported?.map(\.name))
-			let (bindingKeys, publicKeys) = try await initSecurityKeys(configuration)
+			let (bindingKeys, publicKeys) = try await initSecurityKeys(algSupported: Set(configuration.credentialSigningAlgValuesSupported))
 			let offer = try CredentialOffer(credentialIssuerIdentifier: credentialIssuerIdentifier, credentialIssuerMetadata: metaData, credentialConfigurationIdentifiers: [configuration.configurationIdentifier], grants: nil, authorizationServerMetadata: authorizationServerMetadata)
 			// Authorize with auth code flow
 			let issuer = try await getIssuer(offer: offer)
@@ -362,7 +358,7 @@ public actor OpenId4VCIService {
 		}
 		let (auth, issuer, credentialInfos) = try await openId4VCIServices.first!.authorizeOffer(offerUri: offerUri, docTypeModels: docTypes, txCodeValue: txCodeValue)
 		for (i, openId4VCIService) in openId4VCIServices.enumerated() {
-			let (bindingKeys, publicKeys) = try await openId4VCIService.initSecurityKeys(credentialInfos[i])
+			let (bindingKeys, publicKeys) = try await openId4VCIService.initSecurityKeys(algSupported: Set(credentialInfos[i].credentialSigningAlgValuesSupported))
 			guard let docData = try await openId4VCIService.issueDocumentByOfferUrl(issuer: issuer, offer: offer, authorizedOutcome: auth, configuration: credentialInfos[i], bindingKeys: bindingKeys, publicKeys: publicKeys, promptMessage: promptMessage) else { continue }
 			documents.append(try await finalizeIssuing(issueOutcome: docData, docType: docTypes[i].docTypeOrVct, format: credentialInfos[i].format, issueReq: openId4VCIService.issueReq))
 		}
@@ -372,20 +368,10 @@ public actor OpenId4VCIService {
 	func getCredentialConfiguration(credentialIssuerIdentifier: String, issuerDisplay: [Display], credentialsSupported: [CredentialConfigurationIdentifier: CredentialSupported], identifier: String?, docType: String?, vct: String?, batchCredentialIssuance: BatchCredentialIssuance?, dpopSigningAlgValuesSupported: [String]?, clientAttestationPopSigningAlgValuesSupported: [String]?) throws -> CredentialConfiguration {
 			if let credential = credentialsSupported.first(where: { if case .msoMdoc(let msoMdocCred) = $0.value, docType != nil || identifier != nil, msoMdocCred.docType == docType || docType == nil, $0.key.value == identifier || identifier == nil { true } else { false } }), case let .msoMdoc(msoMdocConf) = credential.value, let scope = msoMdocConf.scope {
 			logger.info("msoMdoc with scope \(scope), cryptographic suites: \(msoMdocConf.credentialSigningAlgValuesSupported)")
-			let jwtProofType = msoMdocConf.proofTypesSupported?["jwt"]
-			let attestProofType = msoMdocConf.proofTypesSupported?["attestation"]
-			let supportsJwtProofTypeWithoutAttestation = jwtProofType != nil && (jwtProofType?.keyAttestationRequirement == nil || jwtProofType?.keyAttestationRequirement == .notRequired)
-			let supportsJwtProofTypeWithAttestation = jwtProofType != nil && !supportsJwtProofTypeWithoutAttestation
-
-			return CredentialConfiguration(configurationIdentifier: credential.key, credentialIssuerIdentifier: credentialIssuerIdentifier, docType: msoMdocConf.docType, vct: nil, scope: scope, supportsAttestationProofType: attestProofType != nil, supportsJwtProofTypeWithAttestation: supportsJwtProofTypeWithAttestation,   supportsJwtProofTypeWithoutAttestation: supportsJwtProofTypeWithoutAttestation, credentialSigningAlgValuesSupported: jwtProofType?.algorithms ?? [],  dpopSigningAlgValuesSupported: dpopSigningAlgValuesSupported, clientAttestationPopSigningAlgValuesSupported: clientAttestationPopSigningAlgValuesSupported, issuerDisplay: issuerDisplay.map(\.displayMetadata), display: msoMdocConf.credentialMetadata?.display.map(\.displayMetadata) ?? [], claims: msoMdocConf.credentialMetadata?.claims ?? [], format: .cbor, defaultCredentialOptions: getDefaultCredentialOptions(batchCredentialIssuance: batchCredentialIssuance))
+			return CredentialConfiguration(configurationIdentifier: credential.key, credentialIssuerIdentifier: credentialIssuerIdentifier, docType: msoMdocConf.docType, vct: nil, scope: scope, credentialSigningAlgValuesSupported: msoMdocConf.proofTypesSupported?["jwt"]?.algorithms ?? [],  dpopSigningAlgValuesSupported: dpopSigningAlgValuesSupported, clientAttestationPopSigningAlgValuesSupported: clientAttestationPopSigningAlgValuesSupported, issuerDisplay: issuerDisplay.map(\.displayMetadata), display: msoMdocConf.credentialMetadata?.display.map(\.displayMetadata) ?? [], claims: msoMdocConf.credentialMetadata?.claims ?? [], format: .cbor, defaultCredentialOptions: getDefaultCredentialOptions(batchCredentialIssuance: batchCredentialIssuance))
 		} else if let credential =  credentialsSupported.first(where: { if case .sdJwtVc(let sdJwtVc) = $0.value, vct != nil || identifier != nil, sdJwtVc.vct == vct || vct == nil, $0.key.value == identifier || identifier == nil { true } else { false } }), case let .sdJwtVc(sdJwtVc) = credential.value, let scope = sdJwtVc.scope {
 			logger.info("sdJwtVc with scope \(scope), cryptographic suites: \(sdJwtVc.credentialSigningAlgValuesSupported)")
-			let jwtProofType = sdJwtVc.proofTypesSupported?["jwt"]
-			let attestProofType = sdJwtVc.proofTypesSupported?["attestation"]
-			let supportsJwtProofTypeWithoutAttestation = jwtProofType != nil && (jwtProofType?.keyAttestationRequirement == nil || jwtProofType?.keyAttestationRequirement == .notRequired)
-			let supportsJwtProofTypeWithAttestation = jwtProofType != nil && !supportsJwtProofTypeWithoutAttestation
-
-			return CredentialConfiguration(configurationIdentifier: credential.key, credentialIssuerIdentifier: credentialIssuerIdentifier, docType: nil, vct: sdJwtVc.vct, scope: scope,  supportsAttestationProofType: attestProofType != nil, supportsJwtProofTypeWithAttestation: supportsJwtProofTypeWithAttestation,  supportsJwtProofTypeWithoutAttestation: supportsJwtProofTypeWithoutAttestation, credentialSigningAlgValuesSupported: jwtProofType?.algorithms ?? [], dpopSigningAlgValuesSupported: dpopSigningAlgValuesSupported, clientAttestationPopSigningAlgValuesSupported: clientAttestationPopSigningAlgValuesSupported, issuerDisplay: issuerDisplay.map(\.displayMetadata), display: sdJwtVc.credentialMetadata?.display.map(\.displayMetadata) ?? [], claims: sdJwtVc.credentialMetadata?.claims ?? [], format: .sdjwt, defaultCredentialOptions: getDefaultCredentialOptions(batchCredentialIssuance: batchCredentialIssuance))
+			return CredentialConfiguration(configurationIdentifier: credential.key, credentialIssuerIdentifier: credentialIssuerIdentifier, docType: nil, vct: sdJwtVc.vct, scope: scope, credentialSigningAlgValuesSupported: sdJwtVc.proofTypesSupported?["jwt"]?.algorithms ?? [], dpopSigningAlgValuesSupported: dpopSigningAlgValuesSupported, clientAttestationPopSigningAlgValuesSupported: clientAttestationPopSigningAlgValuesSupported, issuerDisplay: issuerDisplay.map(\.displayMetadata), display: sdJwtVc.credentialMetadata?.display.map(\.displayMetadata) ?? [], claims: sdJwtVc.credentialMetadata?.claims ?? [], format: .sdjwt, defaultCredentialOptions: getDefaultCredentialOptions(batchCredentialIssuance: batchCredentialIssuance))
 		}
 		logger.error("No credential for \(docType ?? vct ?? identifier ?? ""). Currently supported credentials: \(credentialsSupported.keys)")
 		throw WalletError(description: "Issuer does not support docType or scope or identifier \(docType ?? vct ?? identifier ?? "")")
@@ -562,7 +548,7 @@ public actor OpenId4VCIService {
 		logger.info("Starting issuing with identifer \(model.configuration.configurationIdentifier.value)")
 		let pkceVerifier = try PKCEVerifier(codeVerifier: model.pckeCodeVerifier, codeVerifierMethod: model.pckeCodeVerifierMethod)
 		let authorized = try await issuer.authorizeWithAuthorizationCode(request: .authorizationCode(AuthorizationCodeRetrieved(credentials: [.init(value: model.configuration.configurationIdentifier.value)], authorizationCode: IssuanceAuthorization(authorizationCode: authorizationCode), pkceVerifier: pkceVerifier, configurationIds: [model.configuration.configurationIdentifier], dpopNonce: nil))).get()
-		let (bindingKeys, publicKeys) = try await initSecurityKeys(model.configuration)
+		let (bindingKeys, publicKeys) = try await initSecurityKeys(algSupported: Set(model.configuration.credentialSigningAlgValuesSupported))
 		let res = try await submissionUseCase(authorized, issuer: issuer, configuration: model.configuration, bindingKeys: bindingKeys, publicKeys: publicKeys)
 		return res
 	}

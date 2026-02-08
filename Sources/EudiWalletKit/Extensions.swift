@@ -33,11 +33,11 @@ extension String {
 }
 
 func secCall<Result>(_ body: (_ resultPtr: UnsafeMutablePointer<Unmanaged<CFError>?>) -> Result?) throws -> Result {
-	var errorQ: Unmanaged<CFError>? = nil
-	guard let result = body(&errorQ) else {
-		throw errorQ!.takeRetainedValue() as Error
-	}
-	return result
+    var errorQ: Unmanaged<CFError>? = nil
+    guard let result = body(&errorQ) else {
+        throw errorQ!.takeRetainedValue() as Error
+    }
+    return result
 }
 
 extension Display {
@@ -55,15 +55,15 @@ extension Bundle {
 }
 
 extension Data {
-	  public init?(base64urlEncoded input: String) {
-		  var base64 = input
-		  base64 = base64.replacingOccurrences(of: "-", with: "+")
-		  base64 = base64.replacingOccurrences(of: "_", with: "/")
-		  while base64.count % 4 != 0 {
-			  base64 = base64.appending("=")
-		  }
-		  self.init(base64Encoded: base64)
-	  }
+      public init?(base64urlEncoded input: String) {
+          var base64 = input
+          base64 = base64.replacingOccurrences(of: "-", with: "+")
+          base64 = base64.replacingOccurrences(of: "_", with: "/")
+          while base64.count % 4 != 0 {
+              base64 = base64.appending("=")
+          }
+          self.init(base64Encoded: base64)
+      }
 }
 
 extension FileManager {
@@ -77,13 +77,13 @@ extension FileManager {
 }
 
 extension Encodable {
-	/// Converting object to postable JSON
-	func toJSON(_ encoder: JSONEncoder = JSONEncoder()) -> [String: Any] {
-		guard let data = try? encoder.encode(self),
-			  let object = try? JSONSerialization.jsonObject(with: data, options: .allowFragments),
-			  let json = object as? [String: Any] else { return [:] }
-		return json
-	}
+    /// Converting object to postable JSON
+    func toJSON(_ encoder: JSONEncoder = JSONEncoder()) -> [String: Any] {
+        guard let data = try? encoder.encode(self),
+              let object = try? JSONSerialization.jsonObject(with: data, options: .allowFragments),
+              let json = object as? [String: Any] else { return [:] }
+        return json
+    }
 }
 
 extension WalletStorage.Document {
@@ -265,9 +265,9 @@ extension JSON {
 
 
 extension SecureAreaSigner: eudi_lib_sdjwt_swift.AsyncSignerProtocol {
-	func signAsync(_ data: Data) async throws -> Data {
-		return try await sign(data)
-	}
+    func signAsync(_ data: Data) async throws -> Data {
+        return try await sign(data)
+    }
 
 }
 
@@ -298,6 +298,17 @@ extension IdentityAndAccessManagementMetadata {
 }
 
 extension ECPublicKey: @retroactive @unchecked Sendable {}
+
+extension CoseEcCurve {
+	init?(crvName: String) {
+		switch crvName {
+		case "P-256": self = .P256
+		case "P-384": self = .P384
+		case "P-512": self = .P521
+		default: return nil
+		}
+	}
+}
 
 extension BindingKey {
 
