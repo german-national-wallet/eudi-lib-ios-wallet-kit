@@ -1,18 +1,18 @@
 /*
-Copyright (c) 2023 European Commission
+ Copyright (c) 2023 European Commission
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
 
-		http://www.apache.org/licenses/LICENSE-2.0
+ http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ */
 
 import Foundation
 import MdocDataModel18013
@@ -83,15 +83,16 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	/// let wallet = try! EudiWallet(serviceName: "my_wallet_app", trustedReaderCertificates: [Data(name: "eudi_pid_issuer_ut", ext: "der")!])
 	/// ```
 	public init(storageService: (any DataStorageService)? = nil, serviceName: String? = nil, accessGroup: String? = nil, trustedReaderCertificates: [Data]? = nil, userAuthenticationRequired: Bool = true, openID4VpConfig: OpenId4VpConfiguration? = nil, openID4VciConfigurations: [String: OpenId4VciConfiguration]? = nil, networking: (any NetworkingProtocol)? = nil, logFileName: String? = nil, secureAreas: [any SecureArea]? = nil, transactionLogger: (any TransactionLogger)? = nil, modelFactory: (any DocClaimsDecodableFactory)? = nil) throws {
+
 		try Self.validateServiceParams(serviceName: serviceName)
 		self.serviceName = serviceName ?? Self.defaultServiceName
 		self.accessGroup = accessGroup
 		self.modelFactory = modelFactory
 		self.trustedReaderCertificates = trustedReaderCertificates
 		self.userAuthenticationRequired = userAuthenticationRequired
-		#if DEBUG
+#if DEBUG
 		self.userAuthenticationRequired = false
-		#endif
+#endif
 		self.openID4VpConfig = openID4VpConfig ?? OpenId4VpConfiguration()
 		self.openID4VciConfigurations = openID4VciConfigurations
 		self.networkingVci = OpenID4VCINetworking(networking: networking ?? URLSession.shared)
@@ -151,16 +152,16 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 			if _isDebugAssertConfiguration() {
 				handlers.append(StreamLogHandler.standardOutput(label: label))
 			}
-			#if canImport(UIKit)
-				if let logFileName {
-					do {
-						let logFileURL = try Self.getLogFileURL(logFileName)
-						guard let logFileURL else { throw WalletError(description: "Cannot create URL for file name \(logFileName)") }
-						let fileLogger = try FileLogging(to: logFileURL)
-						handlers.append(FileLogHandler(label: label, fileLogger: fileLogger))
-					} catch { fatalError("Logging setup failed: \(error.localizedDescription)") }
-				}
-			#endif
+#if canImport(UIKit)
+			if let logFileName {
+				do {
+					let logFileURL = try Self.getLogFileURL(logFileName)
+					guard let logFileURL else { throw WalletError(description: "Cannot create URL for file name \(logFileName)") }
+					let fileLogger = try FileLogging(to: logFileURL)
+					handlers.append(FileLogHandler(label: label, fileLogger: fileLogger))
+				} catch { fatalError("Logging setup failed: \(error.localizedDescription)") }
+			}
+#endif
 			return MultiplexLogHandler(handlers)
 		}
 	}
@@ -255,7 +256,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		return try await vciService.resumePendingIssuance(pendingDoc: pendingDoc, webUrl: webUrl, credentialOptions: credentialOptions, keyOptions: keyOptions)
 	}
 
-/// Resolve OpenID4VCI offer URL document types. Resolved offer metadata are cached
+	/// Resolve OpenID4VCI offer URL document types. Resolved offer metadata are cached
 	/// When resolving an offer, defaultKeyOptions are now included
 	/// - Parameters:
 	///   - uriOffer: url with offer
@@ -284,7 +285,7 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	///   - promptMessage: prompt message for biometric authentication (optional)
 	///  - configuration: Optional OpenId4VciConfiguration to override the default one for this issuance
 	/// - Returns: Array of issued and stored documents
-	public func issueDocumentsByOfferUrl(offerUri: String, docTypes: [OfferedDocModel], txCodeValue: String? = nil, promptMessage: String? = nil, configuration: OpenId4VciConfiguration? = nil, clientAttestation: ClientAttestation) async throws -> [WalletStorage.Document] {
+	public func issueDocumentsByOfferUrl(offerUri: String, docTypes: [OfferedDocModel], txCodeValue: String? = nil, promptMessage: String? = nil, configuration: OpenId4VciConfiguration? = nil) async throws -> [WalletStorage.Document] {
 		let result = await CredentialOfferRequestResolver(fetcher: Fetcher<CredentialOfferRequestObject>(session: networkingVci), credentialIssuerMetadataResolver: OpenId4VCIService.makeMetadataResolver(networkingVci), authorizationServerMetadataResolver: AuthorizationServerMetadataResolver(oidcFetcher: Fetcher<OIDCProviderMetadata>(session: networkingVci), oauthFetcher: Fetcher<AuthorizationServerMetadata>(session: networkingVci))).resolve(source: try .init(urlString: offerUri), policy: .ignoreSigned)
 		switch result {
 		case .success(let offer):
@@ -318,20 +319,6 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	/// - Parameter issued: The issued document
 	public func endIssueDocument(_ issued: WalletStorage.Document, batch: [WalletStorage.Document]?) async throws {
 		try await storage.storageService.saveDocument(issued, batch: batch, allowOverwrite: true)
-	}
-
-	public func validateIssuedDocuments(_ issued: WalletStorage.Document, batch: [WalletStorage.Document]?, publicKeys: [Data]) async throws {
-		let pkCoseKeys = publicKeys.compactMap { try? CoseKey(data: [UInt8]($0)) }
-		guard pkCoseKeys.count == publicKeys.count else { throw PresentationSession.makeError(str: "Failed to parse public keys") }
-		for (index, doc) in (batch ?? [issued]).enumerated() {
-			do {
-				if doc.docDataFormat == .cbor {
-					let iss = try IssuerSigned(data: [UInt8](doc.data))
-					guard let docType = doc.docType else { throw PresentationSession.makeError(str: "Document type missing at index \(index)") }
-					try iss.validate(docType: docType)
-				}
-			}  catch let e as LocalizedError { throw PresentationSession.makeError(err: e) }
-		}
 	}
 
 	/// Load documents with a specific status from storage
@@ -519,9 +506,9 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 	/// Parse transaction log
 	public func parseTransactionLog(_ transactionLog: TransactionLog) -> TransactionLogData {
 		switch transactionLog.type {
-			case .presentation: .presentation(log: PresentationLogData(transactionLog, uiCulture: uiCulture))
-			case .issuance: .issuance
-			case .signing: .signing
+		case .presentation: .presentation(log: PresentationLogData(transactionLog, uiCulture: uiCulture))
+		case .issuance: .issuance
+		case .signing: .signing
 		}
 	}
 
@@ -556,19 +543,19 @@ public final class EudiWallet: ObservableObject, @unchecked Sendable {
 		if context.canEvaluatePolicy(policy, error: &error) {
 			do {
 				let success = try await context.evaluatePolicy(policy, localizedReason: localizedReason)
-				#if os(iOS)
+#if os(iOS)
 				if success, let scene = await UIApplication.shared.connectedScenes.first {
 					let activateState = await scene.activationState
 					if activateState != .foregroundActive {
-					  // Delay the task by 1 second if not foreground
+						// Delay the task by 1 second if not foreground
 						try await Task.sleep(nanoseconds: 1_000_000_000)
 					}
 					return try await action()
 				}
 				else { dismiss(); }
-				#else
+#else
 				if success { return try await action() }
-				#endif
+#endif
 			} catch let laError as LAError {
 				if !isFallBack, laError.code == .userFallback {
 					return try await authorizedAction(isFallBack: true, action: action, disabled: disabled, dismiss: dismiss, localizedReason: localizedReason)

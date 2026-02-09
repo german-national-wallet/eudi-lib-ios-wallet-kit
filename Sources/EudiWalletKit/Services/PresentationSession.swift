@@ -109,7 +109,7 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 		logger.error(Logger.Message(unicodeScalarLiteral: str))
 		return WalletError(description: str, localizationKey: localizationKey)
 	}
-
+	
 	public static func makeError(err: LocalizedError) -> WalletError {
 		logger.error(Logger.Message(unicodeScalarLiteral: err.errorDescription ?? err.localizedDescription))
 		return WalletError(description: err.errorDescription ?? err.localizedDescription)
@@ -173,7 +173,7 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 	///   - userAccepted: Whether user confirmed to send the response
 	///   - itemsToSend: Data to send organized into a hierarchy of doc.types and namespaces
 	///   - onCancel: Action to perform if the user cancels the biometric authentication
-	public func sendResponse(userAccepted: Bool, itemsToSend: RequestItems, onCancel: (() -> Void)? = nil, onSuccess: (@Sendable (URL?) -> Void)? = nil) async throws {
+	public func sendResponse(userAccepted: Bool, itemsToSend: RequestItems, onCancel: (() -> Void)? = nil, onSuccess: (@Sendable (URL?) -> Void)? = nil) async {
 		do {
 			await MainActor.run { status = .userSelected }
 			let action = { [ weak self] in _ = try await self?.presentationService.sendResponse(userAccepted: userAccepted, itemsToSend: itemsToSend, onSuccess: onSuccess) }
@@ -185,7 +185,6 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 			await setError(error.localizedDescription)
 			let setErrorTransactionLog = presentationService.transactionLog.copy(status: .failed, errorMessage: error.localizedDescription)
 			if let transactionLogger { do { try await transactionLogger.log(transaction: setErrorTransactionLog) } catch { logger.error("Failed to log transaction") } }
-			throw error
 		}
 	}
 
