@@ -66,7 +66,7 @@ extension OpenId4VciConfiguration {
 	//MARK: Duplicate function(makeAttestationClient) to allow passing of private key for client attestation jwt creation
 	private func makeAttestationClientWithPrivateKey(config: KeyAttestationConfig, credentialIssuerId: String, algorithms: [JWSAlgorithm]?) async throws -> Client {
 		let keyId = generatePopKeyId(credentialIssuerId: credentialIssuerId)
-		guard let dpopConstructor = try await makeDPoPConstructor(keyId: keyId, algorithms: algorithms) else {	 throw WalletError(description: "Failed to create DPoP constructor for client attestation") }
+		guard let dpopConstructor = try await makePoPConstructor(popUsage: .clientAttestation, privateKeyId: keyId, algorithms: algorithms, keyOptions: config.popKeyOptions) else {	 throw WalletError(description: "Failed to create DPoP constructor for client attestation") }
 
 		guard case .secKey(let privateKey) = dpopConstructor.privateKey else {
 			throw WalletError(description: "Failed to get the private key for the custom signer")
