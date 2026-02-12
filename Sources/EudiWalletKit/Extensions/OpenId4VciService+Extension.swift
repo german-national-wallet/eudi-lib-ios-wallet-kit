@@ -13,6 +13,112 @@ import JOSESwift
 import WalletStorage
 
 extension OpenId4VCIService {
+
+	public func issuePendingDocuments(docTypeIdentifiers: [DocTypeIdentifier], credentialOptions: CredentialOptions? = nil, keyOptions: KeyOptions? = nil, promptMessage: String? = nil) async throws -> [WalletStorage.Document] {
+
+		if docTypeIdentifiers.isEmpty { return [] }
+		let (credentialIssuerIdentifier, metaData) = try await getIssuerMetadata()
+		guard let authorizationServer = metaData.authorizationServers?.first else {
+			throw PresentationSession.makeError(str: "Invalid authorization server - no authorization server found")
+		}
+
+		let authServerMetadata = await AuthorizationServerMetadataResolver(oidcFetcher: Fetcher<OIDCProviderMetadata>(session: networking), oauthFetcher: Fetcher<AuthorizationServerMetadata>(session: networking)).resolve(url: authorizationServer)
+		let authorizationServerMetadata = try authServerMetadata.get()
+
+		// Build credential configurations for each docTypeIdentifier
+		var credentialConfigurations: [CredentialConfiguration] = []
+		var configurationIdentifiers: [CredentialConfigurationIdentifier] = []
+		for docTypeIdentifier in docTypeIdentifiers {
+			let configuration = try getCredentialConfiguration(
+				credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""),
+				issuerDisplay: metaData.display,
+				credentialsSupported: metaData.credentialsSupported,
+				identifier: docTypeIdentifier.configurationIdentifier,
+				docType: docTypeIdentifier.docType,
+				vct: docTypeIdentifier.vct,
+				batchCredentialIssuance: metaData.batchCredentialIssuance,
+				dpopSigningAlgValuesSupported: authorizationServerMetadata.dpopSigningAlgValuesSupported?.map(\.name),
+				clientAttestationPopSigningAlgValuesSupported: authorizationServerMetadata.clientAttestationPopSigningAlgValuesSupported?.map(\.name)
+			)
+			credentialConfigurations.append(configuration)
+			configurationIdentifiers.append(configuration.configurationIdentifier)
+		}
+
+		// Create a credential offer with all configurations
+		let offer = try CredentialOffer(
+			credentialIssuerIdentifier: credentialIssuerIdentifier,
+			credentialIssuerMetadata: metaData,
+			credentialConfigurationIdentifiers: configurationIdentifiers,
+			grants: nil,
+			authorizationServerMetadata: authorizationServerMetadata
+		)
+		// Cache the offer with a generated UUID
+		let offerUri = UUID().uuidString
+		Self.credentialOfferCache[offerUri] = offer
+		// Build OfferedDocModel array from configurations
+		let docTypes: [OfferedDocModel] = credentialConfigurations.map { config in
+			OfferedDocModel(
+				credentialConfigurationIdentifier: config.configurationIdentifier.value,
+				docType: config.docType,
+				vct: config.vct,
+				scope: config.scope ?? "",
+				identifier: config.configurationIdentifier.value,
+				displayName: config.display.getName(uiCulture) ?? config.docType ?? config.vct ?? config.scope ?? "",
+				algValuesSupported: config.credentialSigningAlgValuesSupported,
+				claims: config.claims,
+				credentialOptions: credentialOptions ?? config.defaultCredentialOptions,
+				keyOptions: keyOptions
+			)
+		}
+
+		// Delegate to issuePendingDocumentsByOfferUrl
+		return try await issuePendingDocumentsByOfferUrl(offerUri: offerUri, docTypeModels: docTypes, txCodeValue: nil, promptMessage: promptMessage)
+	}
+
+	public func issuePendingDocumentsByOfferUrl(offerUri: String, docTypeModels: [OfferedDocModel], txCodeValue: String? = nil, promptMessage: String? = nil) async throws -> [WalletStorage.Document] {
+		if docTypeModels.isEmpty { return [] }
+		guard let offer = Self.credentialOfferCache[offerUri] else {
+			throw PresentationSession.makeError(str: "Offer URI not resolved: \(offerUri)")
+		}
+
+		let credentialInfos = docTypeModels.compactMap { try? getCredentialConfiguration(credentialIssuerIdentifier: offer.credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: offer.credentialIssuerMetadata.display, credentialsSupported: offer.credentialIssuerMetadata.credentialsSupported, identifier: $0.credentialConfigurationIdentifier, docType: $0.docType, vct: $0.vct, batchCredentialIssuance: offer.credentialIssuerMetadata.batchCredentialIssuance, dpopSigningAlgValuesSupported: offer.authorizationServerMetadata.dpopSigningAlgValuesSupported?.map(\.name), clientAttestationPopSigningAlgValuesSupported: offer.authorizationServerMetadata.clientAttestationPopSigningAlgValuesSupported?.map(\.name)) }
+		guard credentialInfos.count > 0, credentialInfos.count == docTypeModels.count else {
+			throw PresentationSession.makeError(str: "Missing Credential identifiers - expected: \(docTypeModels.count), found: \(credentialInfos.count)")
+		}
+
+		var openId4VCIServices = [OpenId4VCIService]()
+		for (i, docTypeModel) in docTypeModels.enumerated() {
+			guard let docTypeIdentifier = docTypeModel.docTypeIdentifier else { continue }
+			let usedCredentialOptions = try await validateCredentialOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: docTypeModel.credentialOptions, offer: offer)
+			let svc = try OpenId4VCIService(uiCulture: uiCulture,  config: config, networking: networking, storage: storage, storageService: storageService)
+			try await svc.prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: i > 0 ? nil : docTypeModels.map(\.displayName).joined(separator: ", "), credentialOptions: usedCredentialOptions, keyOptions: docTypeModel.keyOptions, disablePrompt: i > 0, promptMessage: promptMessage)
+			openId4VCIServices.append(svc)
+		}
+		let issuer = try await getIssuer(offer: offer)
+		let authorizedOutcome = try await authorizePARWithAuthCodeUseCase(issuer: issuer, offer: offer)
+
+		if case .presentation_request(let url) = authorizedOutcome, let authRequested {
+			logger.info("Dynamic issuance request with url: \(url)")
+			let uuid = UUID().uuidString
+			Self.credentialOfferCache[uuid] = offer
+
+			let documents = try await withThrowingTaskGroup(of: WalletStorage.Document.self) { group in
+				for (i, openId4VCIService) in openId4VCIServices.enumerated() {
+					group.addTask {
+						let outcome = IssuanceOutcome.pending(PendingIssuanceModel(pendingReason: .presentation_request_url(url.absoluteString), configuration: credentialInfos[i], metadataKey: uuid, pckeCodeVerifier: authRequested.pkceVerifier.codeVerifier, pckeCodeVerifierMethod: authRequested.pkceVerifier.codeVerifierMethod ))
+
+						return try await self.finalizeIssuing(issueOutcome: outcome, docType: docTypeModels[i].docTypeOrVct, format: credentialInfos[i].format, issueReq: openId4VCIService.issueReq)
+					}
+				}
+				var result =  [WalletStorage.Document]()
+				for try await doc in group { result.append(doc) }
+				return result
+			}
+			return documents
+		}
+		throw PresentationSession.makeError(str: "Unable to generate pending documents")
+	}
+
 	func issuePAR(_ docTypeIdentifier: DocTypeIdentifier, credentialOptions: CredentialOptions?, keyOptions: KeyOptions? = nil, promptMessage: String? = nil) async throws -> WalletStorage.Document? {
 		let usedKeyOptions = try await validateCredentialOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: credentialOptions)
 		try await prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: nil, credentialOptions: usedKeyOptions, keyOptions: keyOptions, disablePrompt: false, promptMessage: promptMessage)
@@ -22,6 +128,28 @@ extension OpenId4VCIService {
 		}
 		return nil
 	}
+	
+//	func issuePAR(_ docTypeIdentifiers: [DocTypeIdentifier], credentialOptions: CredentialOptions?, keyOptions: KeyOptions? = nil, promptMessage: String? = nil) async throws -> WalletStorage.Document? {
+//
+////		let offerUri = UUID().uuidString
+////		Self.credentialOfferCache[offerUri] = offer
+//
+//		var openId4VCIServices = [OpenId4VCIService]()
+//		for (i, docTypeIdentifier) in docTypeIdentifiers.enumerated() {
+////			guard let docTypeIdentifier = docTypeModel.docTypeIdentifier else { continue }
+//			let usedCredentialOptions = try await validateCredentialOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: credentialOptions)
+//			let svc = try OpenId4VCIService(uiCulture: uiCulture,  config: config, networking: networking, storage: storage, storageService: storageService)
+//			let displayName = config.display.getName(uiCulture) ?? config.docType ?? config.vct ?? config.scope ?? ""
+//			try await svc.prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: i > 0 ? nil : displayName, credentialOptions: usedCredentialOptions, keyOptions: keyOptions, disablePrompt: i > 0, promptMessage: promptMessage)
+//		}
+////		let usedKeyOptions = try await validateCredentialOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: credentialOptions)
+////		try await prepareIssuing(id: UUID().uuidString, docTypeIdentifier: docTypeIdentifier, displayName: nil, credentialOptions: usedKeyOptions, keyOptions: keyOptions, disablePrompt: false, promptMessage: promptMessage)
+//		let data = try await issueByPARType(docTypeIdentifier, promptMessage: promptMessage)
+//		if let outcome = data.0 {
+//			return try await finalizeIssuing(issueOutcome: outcome, docType: docTypeIdentifier.docType, format: data.1, issueReq: issueReq)
+//		}
+//		return nil
+//	}
 
 	private func issueByPARType(_ docTypeIdentifier: DocTypeIdentifier, promptMessage: String? = nil) async throws -> (IssuanceOutcome?, DocDataFormat) {
 		let (credentialIssuerIdentifier, metaData) = try await getIssuerMetadata()
@@ -57,6 +185,16 @@ extension OpenId4VCIService {
 		return res
 	}
 
+	func resumePendingIssuance(pendingDoc: WalletStorage.Document, credentialOptions: CredentialOptions, keyOptions: KeyOptions? = nil, authorizationCode: String, nonce: String?) async throws -> WalletStorage.Document {
+		guard pendingDoc.status == .pending, let docTypeIdentifier = pendingDoc.docTypeIdentifier else { throw PresentationSession.makeError(str: "Invalid document status for pending issuance: \(pendingDoc.status)")}
+		let usedCredentialOptions = try await validateCredentialOptions(docTypeIdentifier: docTypeIdentifier, credentialOptions: credentialOptions)
+		try await prepareIssuing(id: pendingDoc.id, docTypeIdentifier: docTypeIdentifier, displayName: nil, credentialOptions: usedCredentialOptions, keyOptions: keyOptions, disablePrompt: true, promptMessage: nil)
+		let outcome = try await resumePendingIssuance(pendingDoc: pendingDoc, authorizationCode: authorizationCode, nonce: nonce)
+		if case .pending(_) = outcome { return pendingDoc }
+		let res = try await finalizeIssuing(issueOutcome: outcome, docType: pendingDoc.docType, format: pendingDoc.docDataFormat, issueReq: issueReq)
+		return res
+	}
+
 	private func resumePendingIssuance(pendingDoc: WalletStorage.Document, authorizationCode: String, nonce: String?) async throws -> IssuanceOutcome {
 		let model = try JSONDecoder().decode(PendingIssuanceModel.self, from: pendingDoc.data)
 		guard case .presentation_request_url(_) = model.pendingReason else { throw WalletError(description: "Unknown pending reason: \(model.pendingReason)") }
@@ -72,11 +210,11 @@ extension OpenId4VCIService {
 
 		let pkceVerifier = try PKCEVerifier(codeVerifier: model.pckeCodeVerifier, codeVerifierMethod: model.pckeCodeVerifierMethod)
 
-		let authorized = try await issuer.authorizeWithAuthorizationCode(request: .authorizationCode(AuthorizationCodeRetrieved(credentials: [.init(value: model.configuration.configurationIdentifier.value)], authorizationCode: IssuanceAuthorization(authorizationCode: authorizationCode), pkceVerifier: pkceVerifier, configurationIds: [model.configuration.configurationIdentifier], dpopNonce: nil))).get()
+		let authorized = try await issuer.authorizeWithAuthorizationCode(request: .authorizationCode(AuthorizationCodeRetrieved(credentials: [.init(value: model.configuration.configurationIdentifier.value)], authorizationCode: IssuanceAuthorization(authorizationCode: authorizationCode), pkceVerifier: pkceVerifier, configurationIds: [model.configuration.configurationIdentifier], dpopNonce: nil)), grant: try offer.grants ?? .authorizationCode(try Grants.AuthorizationCode(authorizationServer: nil))).get()
 
-		let (bindingKeys, publicKeys) = try await initSecurityKeys(algSupported: Set(model.configuration.credentialSigningAlgValuesSupported))
+		let (bindingKeys, publicKeys) = try await initSecurityKeys(model.configuration)
 
-		let res = try await submissionUseCase(authorized, issuer: issuer, configuration: model.configuration, bindingKeys: bindingKeys, publicKeys: publicKeys)
+		let res = try await Self.submissionUseCase(authorized, issuer: issuer, configuration: model.configuration, bindingKeys: bindingKeys, publicKeys: publicKeys, logger: logger)
 		return res
 	}
 
@@ -125,9 +263,9 @@ extension OpenId4VCIService {
 
 							let configuration = try getCredentialConfiguration(credentialIssuerIdentifier: credentialIssuerIdentifier.url.absoluteString.replacingOccurrences(of: "https://", with: ""), issuerDisplay: metaData.display, credentialsSupported: metaData.credentialsSupported, identifier: docTypeIdentifier.configurationIdentifier, docType: docTypeIdentifier.docType, vct: docTypeIdentifier.vct, batchCredentialIssuance: metaData.batchCredentialIssuance, dpopSigningAlgValuesSupported: authorizationServerMetadata.dpopSigningAlgValuesSupported?.map(\.name), clientAttestationPopSigningAlgValuesSupported: authorizationServerMetadata.clientAttestationPopSigningAlgValuesSupported?.map(\.name))
 
-							let (bindingKeys, publicKeys) = try await initSecurityKeys(algSupported: Set(configuration.credentialSigningAlgValuesSupported))
+							let (bindingKeys, publicKeys) = try await initSecurityKeys(configuration)
 
-							let issuanceOutcome = try await submissionUseCase(authorizedRequest, issuer: issuer, configuration: configuration, bindingKeys: bindingKeys, publicKeys: publicKeys)
+							let issuanceOutcome = try await Self.submissionUseCase(authorizedRequest, issuer: issuer, configuration: configuration, bindingKeys: bindingKeys, publicKeys: publicKeys, logger: logger)
 
 							return (issuanceOutcome, configuration.format, updatedAuthRequest)
 						} catch {

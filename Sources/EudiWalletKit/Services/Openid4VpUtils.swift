@@ -111,8 +111,8 @@ class OpenId4VpUtils {
 		guard let presentedSdJwt else { return nil }
 		let digestCreator = DigestCreator(hashingAlgorithm: hashingAlg)
 		guard let sdHash = digestCreator.hashAndBase64Encode(input: CompactSerialiser(signedSDJWT: presentedSdJwt).serialised) else { return nil }
-    	var payload = [Keys.nonce.rawValue: nonce, Keys.aud.rawValue: aud, Keys.iat.rawValue: Int(Date().timeIntervalSince1970.rounded()), Keys.sdHash.rawValue: sdHash] as [String : Any]
-		  // Process transaction data hashes if available
+		var payload = [Keys.nonce.rawValue: nonce, Keys.aud.rawValue: aud, Keys.iat.rawValue: Int(Date().timeIntervalSince1970.rounded()), Keys.sdHash.rawValue: sdHash] as [String : Any]
+		// Process transaction data hashes if available
 		if let transactionData, !transactionData.isEmpty {
 			let transactionDataHashes = transactionData.map { td -> String in
 				switch td {	case .sdJwtVc(let v): return sha256Hash(v) }
