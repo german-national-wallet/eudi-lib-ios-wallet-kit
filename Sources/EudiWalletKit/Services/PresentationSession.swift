@@ -1,18 +1,18 @@
 /*
-Copyright (c) 2023 European Commission
+ Copyright (c) 2023 European Commission
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
 
-		http://www.apache.org/licenses/LICENSE-2.0
+ http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ */
 
 import Foundation
 import SwiftUI
@@ -75,21 +75,21 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 		disclosedDocuments = [DocElements]()
 		for (docId, docPresentInfo) in docIdToPresentInfo {
 			let docType = docPresentInfo.docType
-			let requestFormat = request.docDataFormats[docId] ?? request.docDataFormats[docType]  ?? request.docDataFormats.first(where: { Openid4VpUtils.vctToDocTypeMatch($0.key, docType)})?.value
+			let requestFormat = request.docDataFormats[docId] ?? request.docDataFormats[docType]  ?? request.docDataFormats.first(where: { OpenId4VpUtils.vctToDocTypeMatch($0.key, docType)})?.value
 			if requestFormat != docPresentInfo.docDataFormat  { continue }
 			switch requestFormat {
-				case .cbor:
-					guard case let .msoMdoc(issuerSigned) = docPresentInfo.typedData else { continue }
-					guard let docItemsRequested = request.itemsRequested[docId] ?? request.itemsRequested[docType] else { continue }
-					let msoElements = issuerSigned.extractMsoMdocElements(docId: docId, docType: docType, displayName: docPresentInfo.displayName, docClaims: docPresentInfo.docClaims, itemsRequested: docItemsRequested)
-					disclosedDocuments.append(.msoMdoc(msoElements))
-				case .sdjwt:
-					guard case let .sdJwt(signedSdJwt) = docPresentInfo.typedData else { continue }
-					guard let sdItemsRequested = request.itemsRequested[docId] ?? request.itemsRequested[docType] else { continue }
-					let sdJwtElements = signedSdJwt.extractSdJwtElements(docId: docId, vct: docType, displayName: docPresentInfo.displayName, docClaims: docPresentInfo.docClaims, itemsRequested: sdItemsRequested)
-					guard let sdJwtElements else { continue }
-					disclosedDocuments.append(.sdJwt(sdJwtElements))
-				default: logger.error("Unsupported format \(docPresentInfo.docDataFormat) for \(docId)")
+			case .cbor:
+				guard case let .msoMdoc(issuerSigned) = docPresentInfo.typedData else { continue }
+				guard let docItemsRequested = request.itemsRequested[docId] ?? request.itemsRequested[docType] else { continue }
+				let msoElements = issuerSigned.extractMsoMdocElements(docId: docId, docType: docType, displayName: docPresentInfo.displayName, docClaims: docPresentInfo.docClaims, itemsRequested: docItemsRequested)
+				disclosedDocuments.append(.msoMdoc(msoElements))
+			case .sdjwt:
+				guard case let .sdJwt(signedSdJwt) = docPresentInfo.typedData else { continue }
+				guard let sdItemsRequested = request.itemsRequested[docId] ?? request.itemsRequested[docType] else { continue }
+				let sdJwtElements = signedSdJwt.extractSdJwtElements(docId: docId, vct: docType, displayName: docPresentInfo.displayName, docClaims: docPresentInfo.docClaims, itemsRequested: sdItemsRequested)
+				guard let sdJwtElements else { continue }
+				disclosedDocuments.append(.sdJwt(sdJwtElements))
+			default: logger.error("Unsupported format \(docPresentInfo.docDataFormat) for \(docId)")
 			}
 
 		}
@@ -108,6 +108,11 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 	public static func makeError(str: String, localizationKey: String? = nil) -> WalletError {
 		logger.error(Logger.Message(unicodeScalarLiteral: str))
 		return WalletError(description: str, localizationKey: localizationKey)
+	}
+
+	public static func makeError(err: LocalizedError) -> WalletError {
+		logger.error(Logger.Message(unicodeScalarLiteral: err.errorDescription ?? err.localizedDescription))
+		return WalletError(description: err.errorDescription ?? err.localizedDescription)
 	}
 
 	/// Start QR engagement to be presented to verifier
@@ -163,7 +168,7 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 		}
 	}
 
-/// Send response to verifier
+	/// Send response to verifier
 	/// - Parameters:
 	///   - userAccepted: Whether user confirmed to send the response
 	///   - itemsToSend: Data to send organized into a hierarchy of doc.types and namespaces
@@ -183,7 +188,4 @@ public final class PresentationSession: @unchecked Sendable, ObservableObject {
 			throw error
 		}
 	}
-
-
-
 }
