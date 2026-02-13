@@ -1,18 +1,18 @@
 /*
-Copyright (c) 2023 European Commission
+ Copyright (c) 2023 European Commission
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
 
-		http://www.apache.org/licenses/LICENSE-2.0
+ http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ */
 
 import Foundation
 import MdocDataModel18013
@@ -23,25 +23,31 @@ struct CredentialConfiguration: Codable, Sendable {
 	/// the credential issuer identifier (issuer URL)
 	let configurationIdentifier: CredentialConfigurationIdentifier
 	let credentialIssuerIdentifier: String
-    let docType: String?
+	let docType: String?
 	let vct: String?
-    let scope: String?
-    let credentialSigningAlgValuesSupported: [String]
+	let scope: String?
+	let supportsAttestationProofType: Bool
+	let supportsJwtProofTypeWithAttestation: Bool
+	let supportsJwtProofTypeWithoutAttestation: Bool
+	let credentialSigningAlgValuesSupported: [String]
 	let dpopSigningAlgValuesSupported: [String]?
 	let clientAttestationPopSigningAlgValuesSupported: [String]?
 	let issuerDisplay: [DisplayMetadata]    //public let proofTypesSupported: [String: ProofTypeSupportedMeta]?
-    let display: [DisplayMetadata]
-    let claims: [Claim]
-   	let format: DocDataFormat
+	let display: [DisplayMetadata]
+	let claims: [Claim]
+	let format: DocDataFormat
 	var batchSize: Int?
 	let defaultCredentialOptions: CredentialOptions
 
-	public init(configurationIdentifier: CredentialConfigurationIdentifier, credentialIssuerIdentifier: String, docType: String? = nil, vct: String? = nil, scope: String? = nil, credentialSigningAlgValuesSupported: [String], dpopSigningAlgValuesSupported: [String]?, clientAttestationPopSigningAlgValuesSupported: [String]?, issuerDisplay: [DisplayMetadata], display: [DisplayMetadata], claims: [Claim], format: DocDataFormat, defaultCredentialOptions: CredentialOptions) {
+	init(configurationIdentifier: CredentialConfigurationIdentifier, credentialIssuerIdentifier: String, docType: String? = nil, vct: String? = nil, scope: String? = nil, supportsAttestationProofType: Bool, supportsJwtProofTypeWithAttestation: Bool, supportsJwtProofTypeWithoutAttestation: Bool,  credentialSigningAlgValuesSupported: [String], dpopSigningAlgValuesSupported: [String]?, clientAttestationPopSigningAlgValuesSupported: [String]?, issuerDisplay: [DisplayMetadata], display: [DisplayMetadata], claims: [Claim], format: DocDataFormat, defaultCredentialOptions: CredentialOptions) {
 		self.configurationIdentifier = configurationIdentifier
 		self.credentialIssuerIdentifier = credentialIssuerIdentifier
 		self.docType = docType
 		self.vct = vct
 		self.scope = scope
+		self.supportsAttestationProofType = supportsAttestationProofType
+		self.supportsJwtProofTypeWithAttestation = supportsJwtProofTypeWithAttestation
+		self.supportsJwtProofTypeWithoutAttestation = supportsJwtProofTypeWithoutAttestation
 		self.credentialSigningAlgValuesSupported = credentialSigningAlgValuesSupported
 		self.dpopSigningAlgValuesSupported = dpopSigningAlgValuesSupported
 		self.clientAttestationPopSigningAlgValuesSupported = clientAttestationPopSigningAlgValuesSupported
@@ -51,7 +57,7 @@ struct CredentialConfiguration: Codable, Sendable {
 		self.format = format
 		self.defaultCredentialOptions = defaultCredentialOptions
 	}
- }
+}
 
 struct DeferredIssuanceModel: Codable, Sendable {
 	let deferredCredentialEndpoint: CredentialIssuerEndpoint
@@ -115,4 +121,3 @@ extension IssuanceOutcome {
 		return pk
 	}
 }
-

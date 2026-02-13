@@ -14,19 +14,19 @@ import SwiftyJSON
 
 extension EudiWallet {
 	@MainActor
-	@discardableResult public func issuePAR(issuerName: String, docTypeIdentifier: DocTypeIdentifier, credentialOptions: CredentialOptions?, keyOptions: KeyOptions? = nil, promptMessage: String? = nil) async throws -> WalletStorage.Document? {
+	@discardableResult public func issuePAR(issuerName: String, docTypeIdentifiers: DocTypeIdentifier, credentialOptions: CredentialOptions?, keyOptions: KeyOptions? = nil, promptMessage: String? = nil) async throws -> WalletStorage.Document? {
 		guard let vciService = OpenId4VCIServiceRegistry.shared.get(name: issuerName) else {
 			throw WalletError(description: "No OpenId4VCI service registered for name \(issuerName)")
 		}
-		return try await vciService.issuePAR(docTypeIdentifier, credentialOptions: credentialOptions, promptMessage: promptMessage)
+		return try await vciService.issuePAR(docTypeIdentifiers, credentialOptions: credentialOptions, promptMessage: promptMessage)
 	}
 
 	@MainActor
-	@discardableResult public func resumePendingIssuanceDocuments(issuerName: String, pendingDoc: WalletStorage.Document, authorizationCode: String, nonce: String?, credentialOptions: CredentialOptions, keyOptions: KeyOptions? = nil) async throws -> WalletStorage.Document? {
+	@discardableResult public func resumePendingIssuanceDocuments(issuerName: String, pendingDoc: WalletStorage.Document, authorizationCode: String, nonce: String?, docTypeIdentifiers: [DocTypeIdentifier], credentialOptions: CredentialOptions, keyOptions: KeyOptions? = nil) async throws -> [WalletStorage.Document] {
 		guard let vciService = OpenId4VCIServiceRegistry.shared.get(name: issuerName) else {
 			throw WalletError(description: "No OpenId4VCI service registered for name \(issuerName)")
 		}
-		return try await vciService.resumePendingIssuance(pendingDoc: pendingDoc, credentialOptions: credentialOptions, keyOptions: keyOptions, authorizationCode: authorizationCode, nonce: nonce)
+		return try await vciService.resumePendingIssuance(pendingDoc: pendingDoc, docTypeIdentifiers: docTypeIdentifiers, credentialOptions: credentialOptions, keyOptions: keyOptions, authorizationCode: authorizationCode, nonce: nonce)
 	}
 
 	//MARK: commenting for now but will be needed again for fixing refresh token, WD-1352

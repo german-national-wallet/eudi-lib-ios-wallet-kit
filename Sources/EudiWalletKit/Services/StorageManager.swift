@@ -210,8 +210,8 @@ public final class StorageManager: ObservableObject, @unchecked Sendable {
 			let bValid = (try? await hasAnyCredential(id: m.id)) ?? false
 			guard bValid else { return nil }
 			let docTypedData: DocTypedData? = switch m.docDataFormat {
-				case .cbor: if let iss = try? IssuerSigned(data: doc.data.bytes) { .msoMdoc(iss) } else { nil }
-				case .sdjwt: if let serString = String(data: doc.data, encoding: .utf8), let sd = try? CompactParser().getSignedSdJwt(serialisedString: serString) { .sdJwt(sd) } else { nil }
+			case .cbor: if let iss = try? IssuerSigned(data: doc.data.bytes) { .msoMdoc(iss) } else { nil }
+			case .sdjwt: if let serString = String(data: doc.data, encoding: .utf8), let sd = try? CompactParser().getSignedSdJwt(serialisedString: serString) { .sdJwt(sd) } else { nil }
 			}
 			guard let docTypedData else { return nil }
 			let presentInfo = DocPresentInfo(docType: m.docType!, secureAreaName: dki.secureAreaName, docDataFormat: m.docDataFormat, displayName: m.displayName, docClaims: m.docClaims, typedData: docTypedData)

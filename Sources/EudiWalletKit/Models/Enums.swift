@@ -68,4 +68,3 @@ public enum DocTypeIdentifier: Sendable, Hashable, Codable {
 		}
 	}
 }
-
