@@ -105,7 +105,7 @@ public final class StorageManager: ObservableObject, @unchecked Sendable {
 		}
 	}
 
-	func removePendingOrDeferredDoc(id: String) async throws {
+	public func removePendingOrDeferredDoc(id: String) async throws {
 		if let index = pendingDocuments.firstIndex(where: { $0.id == id }) {
 			_ = await MainActor.run { pendingDocuments.remove(at: index) }
 		}
